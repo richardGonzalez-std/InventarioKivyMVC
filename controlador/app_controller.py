@@ -1,88 +1,127 @@
+# controlador/app_controller.py
+"""
+Controlador principal de la aplicación de inventario.
+
+Responsabilidades:
+- Inicializar la aplicación (MDApp)
+- Gestionar permisos de Android
+- Coordinar la navegación entre pantallas
+- Cargar la UI apropiada según la plataforma (mobile/PC)
+
+NO define clases de UI (están en vista/screens/)
+"""
+
 from kivy.utils import platform
+
+# Configuración ANTES de importar Kivy (solo en no-Android)
 if platform != "android":
     import os
-    os.environ["KIVY_NO_CONSOLELOG"] = "1"  # Desactivar logs en consola si no es Android
-    os.environ["KIVY_CAMERA"] = "opencv"  # Usar OpenCV en no-Android para pruebas locales
+    os.environ["KIVY_NO_CONSOLELOG"] = "1"  # Desactivar logs en consola
+    os.environ["KIVY_CAMERA"] = "opencv"    # Usar OpenCV para pruebas locales
+
+# Imports de Kivy/KivyMD
 from kivymd.app import MDApp
-from kivymd.uix.screen import MDScreen
-from kivymd.uix.screenmanager import MDScreenManager
 from kivy.lang import Builder
-from kivy.properties import StringProperty
-from kivy.uix.camera import Camera
-from kivy.clock import Clock
-import textwrap
-  # Importación clave para verificar la plataforma
-# --- IMPORTACIONES DE MATERIAL DESIGN 3 ---
-from kivymd.uix.appbar import (
-    MDTopAppBar,
-    MDTopAppBarLeadingButtonContainer,
-    MDTopAppBarTitle,
-    MDActionTopAppBarButton
-)
+
+# Imports de widgets (solo para type hints y navegación)
 from kivymd.uix.navigationbar import MDNavigationBar, MDNavigationItem
-from kivymd.uix.boxlayout import MDBoxLayout
-from kivymd.uix.label import MDLabel
-# ------------------------------------------
 
-# --- Definición de la Interfaz (KV) ---
-# --- Clases de Python para las Pantallas ---
+# Import de nuestras pantallas personalizadas
+from vista.screens import CameraScreen, InventoryScreen
 
-class BaseMDNavigationItem(MDNavigationItem):
-    """Clase base para el ítem de navegación."""
-    pass
-
-
-
-
-# --- Clase Principal de la Aplicación ---
 
 class InventoryApp(MDApp):
+    """
+    Aplicación principal de inventario.
+    
+    Gestiona:
+    - Tema Material Design 3
+    - Permisos de cámara en Android
+    - Navegación entre pantallas
+    - Carga de UI según plataforma
+    """
     
     def build(self):
+        """
+        Construye la interfaz de usuario.
+        
+        Se ejecuta UNA VEZ al iniciar la app.
+        
+        Comportamiento:
+        - Android: Tema oscuro + vista/mobile.kv
+        - Otros: Tema claro + vista/pc.kv
+        
+        Returns:
+            Widget raíz de la aplicación
+        """
+        # Configurar Material Design 3
         self.theme_cls.material_style = "M3"
-        # Cargar el KV es AHORA SEGURO, porque no hay <Camera> en él.
+        
+        # Cargar UI según plataforma
         if platform == "android":
-            print("ANDROID: Construyendo la aplicación con Material Design 3.")
+            print("✓ ANDROID: Construyendo UI móvil con MD3 (Dark)")
             self.theme_cls.theme_style = "Dark"
             return Builder.load_file("vista/mobile.kv")
         else:
+            print("✓ DESKTOP: Construyendo UI de escritorio con MD3 (Light)")
             self.theme_cls.theme_style = "Light"
             return Builder.load_file("vista/pc.kv")
-
-    # --- INICIO DEL NUEVO CÓDIGO DE PERMISOS ---
+    
+    # ─────────────────────────────────────────────────────────
+    # GESTIÓN DE PERMISOS ANDROID
+    # ─────────────────────────────────────────────────────────
+    
     def on_start(self):
         """
-        Se llama al iniciar la app, DESPUÉS de build().
-        Este es el lugar correcto para pedir permisos.
+        Se ejecuta DESPUÉS de build(), cuando la app está lista.
+        
+        Este es el momento correcto para solicitar permisos
+        porque la UI ya está construida.
         """
         if platform == "android":
-            print("ANDROID: Verificando permisos de cámara...")
-            from android.permissions import request_permissions, Permission, check_permission # pyright: ignore[reportMissingImports]
-            
-            # Comprueba si ya tenemos el permiso
-            if not check_permission(Permission.CAMERA):
-                print("ANDROID: No hay permiso, solicitándolo...")
-                # Pide el permiso (esto mostrará el pop-up)
-                request_permissions(
-                    [Permission.CAMERA], 
-                    self.on_permissions_granted
-                )
-            else:
-                print("ANDROID: El permiso de cámara ya estaba concedido.")
+            print("✓ ANDROID: Verificando permisos de cámara...")
+            self._request_android_permissions()
         else:
-            print("Plataforma no es Android, no se piden permisos.")
-
+            print("✓ DESKTOP: No se requieren permisos especiales")
+    
+    def _request_android_permissions(self):
+        """
+        Solicita permiso de cámara en Android.
+        
+        Flujo:
+        1. Verificar si ya tenemos el permiso
+        2. Si NO → Mostrar popup del sistema
+        3. Usuario acepta/rechaza → Callback on_permissions_granted
+        """
+        from android.permissions import request_permissions, Permission, check_permission
+        
+        if not check_permission(Permission.CAMERA):
+            print("✓ ANDROID: Solicitando permiso de cámara...")
+            request_permissions(
+                [Permission.CAMERA],
+                self.on_permissions_granted
+            )
+        else:
+            print("✓ ANDROID: Permiso de cámara ya concedido")
+    
     def on_permissions_granted(self, permissions, grants):
         """
-        Callback que se llama cuando el usuario responde al pop-up.
+        Callback que recibe la respuesta del usuario al popup de permisos.
+        
+        Args:
+            permissions: Lista de permisos solicitados
+            grants: Lista de booleanos (True=concedido, False=denegado)
         """
         if all(grants):
-            print("ANDROID: ¡Permiso de cámara CONCEDIDO!")
+            print("✓ ANDROID: ¡Permiso de cámara CONCEDIDO!")
         else:
-            print("ANDROID: Permiso de cámara DENEGADO.")
-            # Aquí podrías mostrar un pop-up informando al usuario
-    # --- FIN DEL NUEVO CÓDIGO DE PERMISOS ---
-
+            print("✗ ANDROID: Permiso de cámara DENEGADO")
+            # TODO Fase 2: Mostrar dialog explicando por qué se necesita
+    
+    # ─────────────────────────────────────────────────────────
+    # NAVEGACIÓN
+    # ─────────────────────────────────────────────────────────
+    
     def on_switch_tabs(
         self,
         bar: MDNavigationBar,
@@ -91,11 +130,29 @@ class InventoryApp(MDApp):
         item_text: str,
     ):
         """
-        Se llama cada vez que se presiona un ítem de la barra inferior.
-        Usamos 'item.name' (que definimos en el KV) para cambiar de pantalla.
+        Handler para cambios de tab en la barra de navegación inferior.
+        
+        Se llama automáticamente cuando el usuario presiona un tab.
+        Definido en mobile.kv: on_switch_tabs: app.on_switch_tabs(*args)
+        
+        Args:
+            bar: Instancia de MDNavigationBar
+            item: El MDNavigationItem seleccionado
+            item_icon: Nombre del ícono del item
+            item_text: Texto del item
         """
-        print(f"Cambiando a pantalla: {item.name}")
-        self.root.ids.screen_manager.current = item.name
+        screen_name = item.name  # Definido en el .kv para cada BaseMDNavigationItem
+        print(f"✓ Navegando a pantalla: {screen_name}")
+        self.root.ids.screen_manager.current = screen_name
+
+
+# ─────────────────────────────────────────────────────────
+# PUNTO DE ENTRADA
+# ─────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
+    """
+    Este bloque solo se ejecuta si ejecutas directamente app_controller.py
+    En producción, se ejecuta desde main.py
+    """
     InventoryApp().run()
