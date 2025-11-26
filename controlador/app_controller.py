@@ -22,6 +22,7 @@ if platform != "android":
 # Imports de Kivy/KivyMD
 from kivymd.app import MDApp
 from kivy.lang import Builder
+from kivy.core.window import Window
 
 # Imports de widgets (solo para type hints y navegación)
 from kivymd.uix.navigationbar import MDNavigationBar, MDNavigationItem
@@ -65,6 +66,8 @@ class InventoryApp(MDApp):
         else:
             print("✓ DESKTOP: Construyendo UI de escritorio con MD3 (Light)")
             self.theme_cls.theme_style = "Light"
+            Window.size = (1360, 768)  # Tamaño ventana para pruebas en PC
+            Window.minimum_width, Window.minimum_height = (800, 600)  # Tamaño mínimo
             return Builder.load_file("vista/pc.kv")
     
     # ─────────────────────────────────────────────────────────
