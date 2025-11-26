@@ -28,7 +28,7 @@ from kivy.core.window import Window
 from kivymd.uix.navigationbar import MDNavigationBar, MDNavigationItem
 
 # Import de nuestras pantallas personalizadas
-from vista.screens import CameraScreen, InventoryScreen
+from vista.screens import CameraScreen, InventoryScreen, AdminScreen
 
 
 class InventoryApp(MDApp):
@@ -55,8 +55,25 @@ class InventoryApp(MDApp):
         Returns:
             Widget raíz de la aplicación
         """
-        # Configurar Material Design 3
         self.theme_cls.material_style = "M3"
+
+        # Configurar Material Design 3
+        # --- CONFIGURACIÓN DE COLORES CORPOELEC ---
+        # Usamos el Azul Profundo como color primario de la app
+        self.theme_cls.primary_palette = "Blue"  # KivyMD busca el más cercano
+        
+        # O podemos forzar un color específico si usamos colores personalizados:
+        # self.theme_cls.primary_hue = "900" # Tono oscuro
+        
+        # PERO, para ser exactos con el logo, usaremos colores HEX personalizados:
+        # KivyMD permite definir colores personalizados asignándolos al theme_cls
+        self.theme_cls.theme_style = "Light" # Fondo claro para contraste limpio
+        
+        # Definimos el color primario (Azul CORPOELEC)
+        self.theme_cls.primary_color = [0, 26/255, 112/255, 1] # RGB para #001A70
+        
+        # Definimos el color de acento (Rojo CORPOELEC) para botones de acción flotante, etc.
+        self.theme_cls.accent_color = [227/255, 28/255, 35/255, 1] # RGB para #E31C23
         
         # Cargar UI según plataforma
         if platform == "android":
@@ -65,10 +82,10 @@ class InventoryApp(MDApp):
             return Builder.load_file("vista/mobile.kv")
         else:
             print("✓ DESKTOP: Construyendo UI de escritorio con MD3 (Light)")
-            self.theme_cls.theme_style = "Light"
             Window.size = (1360, 768)  # Tamaño ventana para pruebas en PC
             Window.minimum_width, Window.minimum_height = (800, 600)  # Tamaño mínimo
-            return Builder.load_file("vista/pc.kv")
+            Builder.load_file("vista/pc.kv")
+            return AdminScreen()  # Cargar pantalla admin directamente para PC
     
     # ─────────────────────────────────────────────────────────
     # GESTIÓN DE PERMISOS ANDROID

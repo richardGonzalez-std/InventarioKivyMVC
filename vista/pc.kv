@@ -1,58 +1,159 @@
-MDBoxLayout:
-    orientation: "vertical"
-    md_bg_color: self.theme_cls.backgroundColor
-
-    MDTopAppBar:
-        type: "small"
-        MDTopAppBarTitle:
-            text: "Panel de Administración - Inventario"
-            halign: "left"
-    
+<AdminScreen>:
     MDBoxLayout:
-        orientation: "horizontal"
-        padding: "20dp"
-        spacing: "20dp"
+        orientation: "vertical"
+        # Fondo general muy suave (gris casi blanco) para que resalte el contenido
+        md_bg_color: [0.96, 0.96, 0.96, 1]
 
-        # Panel lateral (Menu)
-        <AdminScreen>:
-            MDCard:
-                size_hint_x: 0.3
-                orientation: "vertical"
-                padding: "10dp"
-                MDCard:
-                    orientation: "vertical"
-                    padding: "2dp"
-                    MDLabel:
-                        text:""
-                        font_style: "Title"
-                        role: "large"
-                        adaptive_height: True
-                
-                MDDivider:
-                    
-                MDLabel:
-                    text: "Menú Admin"
-                    font_style: "Title"
-                    role: "large"
-                    adaptive_height: True
-                
-                MDDivider:
-                
-                MDList:
-                    MDListItem:
-                        MDListItemHeadlineText:
-                            text: "Reportes Globales"
-                    MDListItem:
-                        MDListItemHeadlineText:
-                            text: "Gestión de Usuarios"
-                    MDListItem:
-                        MDListItemHeadlineText:
-                            text: "Base de Datos"
-
-        # Área principal de contenido
-        MDCard:
-            size_hint_x: 0.7
+        # --- BARRA SUPERIOR (AZUL CORPORATIVO) ---
+        MDTopAppBar:
+            type: "small"
+            # Forzamos el color Azul CORPOELEC
+            md_bg_color: [0, 26/255, 112/255, 1]
+            specific_text_color: [1, 1, 1, 1] # Texto blanco
+            
+            MDTopAppBarTitle:
+                text: "Panel de Administración"
+                halign: "left"
+                # Aseguramos que el texto sea blanco
+                theme_text_color: "Custom"
+                text_color: [1, 1, 1, 1] 
+        
+        MDBoxLayout:
+            orientation: "horizontal"
             padding: "20dp"
-            MDLabel:
-                text: "Bienvenido al Dashboard Administrativo"
-                halign: "center"
+            spacing: "20dp"
+
+            # --- SIDEBAR (MENÚ) ---
+            MDBoxLayout:
+                orientation: "vertical"
+                size_hint_x: 0.3
+                spacing: "20dp"
+
+                # 1. TARJETA DE PERFIL
+                MDCard:
+                    style: "elevated"
+                    size_hint_y: None
+                    height: "90dp"
+                    padding: "15dp"
+                    radius: [10]
+                    md_bg_color: [1, 1, 1, 1] # Blanco puro
+                    
+                    MDBoxLayout:
+                        orientation: "horizontal"
+                        spacing: "15dp"
+                        
+                        # Ícono de usuario en ROJO para contraste
+                        MDIcon:
+                            icon: "account-circle"
+                            pos_hint: {"center_y": .5}
+                            font_size: "48sp"
+                            theme_text_color: "Custom"
+                            text_color: [227/255, 28/255, 35/255, 1] # Rojo CORPOELEC
+
+                        MDBoxLayout:
+                            orientation: "vertical"
+                            pos_hint: {"center_y": .5}
+                            adaptive_height: True
+
+                            MDLabel:
+                                id: admin_label
+                                text: "Cargando..."
+                                font_style: "Title"
+                                role: "medium"
+                                bold: True
+                                theme_text_color: "Primary"
+
+                # 2. MENÚ DE OPCIONES
+                MDCard:
+                    style: "elevated"
+                    orientation: "vertical"
+                    padding: "0dp"
+                    radius: [10]
+                    md_bg_color: [1, 1, 1, 1]
+                    
+                    MDBoxLayout:
+                        size_hint_y: None
+                        height: "50dp"
+                        padding: "15dp"
+                        
+                        MDLabel:
+                            text: "MENÚ PRINCIPAL"
+                            font_style: "Label"
+                            role: "large"
+                            theme_text_color: "Primary"
+                            bold: True
+                    
+                    MDDivider:
+                        color: [0.9, 0.9, 0.9, 1]
+                    
+                    MDList:
+                        # Items del menú con íconos
+                        MDListItem:
+                            MDListItemLeadingIcon:
+                                icon: "file-chart"
+                                theme_text_color: "Custom"
+                                text_color: [0, 26/255, 112/255, 1] # Azul
+                            MDListItemHeadlineText:
+                                text: "Reportes Globales"
+
+                        MDListItem:
+                            MDListItemLeadingIcon:
+                                icon: "account-group"
+                                theme_text_color: "Custom"
+                                text_color: [0, 26/255, 112/255, 1] # Azul
+                            MDListItemHeadlineText:
+                                text: "Gestión de Usuarios"
+
+                        MDListItem:
+                            MDListItemLeadingIcon:
+                                icon: "database"
+                                theme_text_color: "Custom"
+                                text_color: [0, 26/255, 112/255, 1] # Azul
+                            MDListItemHeadlineText:
+                                text: "Base de Datos"
+                    
+                    MDWidget: # Espaciador
+
+# --- ÁREA DE CONTENIDO (DERECHA) ---
+            MDCard:
+                size_hint_x: 0.7
+                style: "elevated"
+                padding: "30dp"
+                radius: [10]
+                md_bg_color: [1, 1, 1, 1]
+                
+                # --- CORRECCIÓN AQUÍ ---
+                MDBoxLayout:
+                    orientation: "vertical"
+                    spacing: "20dp"
+                    
+                    # 1. Quitamos 'adaptive_size: True' porque colapsa el ancho.
+                    # 2. Usamos 'adaptive_height: True' para que se ajuste verticalmente.
+                    adaptive_height: True
+                    
+                    # 3. Centramos verticalmente el bloque dentro de la tarjeta
+                    pos_hint: {"center_y": .5}
+
+                    MDIcon:
+                        icon: "lightning-bolt"
+                        font_size: "80sp"
+                        pos_hint: {"center_x": .5}
+                        theme_text_color: "Custom"
+                        text_color: [227/255, 28/255, 35/255, 0.2]
+
+                    MDLabel:
+                        text: "Sistema de Inventario"
+                        halign: "center"
+                        font_style: "Headline"
+                        role: "medium"
+                        theme_text_color: "Custom"
+                        text_color: [0, 26/255, 112/255, 1]
+                        # Mantenemos esto para que calcule su altura vertical
+                        adaptive_height: True 
+
+                    MDLabel:
+                        text: "Seleccione una opción del menú\npara comenzar."
+                        halign: "center"
+                        theme_text_color: "Hint"
+                        # Mantenemos esto para que calcule su altura vertical
+                        adaptive_height: True
