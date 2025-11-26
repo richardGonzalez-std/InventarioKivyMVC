@@ -167,15 +167,26 @@ class CameraScreen(MDScreen):
         # 3. Si el permiso está OK (o no estamos en Android), crear la cámara
         print("Permiso OK. Creando e iniciando la cámara...")
         if not self.camera_widget:
-            self.camera_widget = Camera(
-                resolution=(640, 480),
-                allow_stretch=True
-            )
-        
-        # 4. Añadir el widget de la cámara al contenedor y encenderla
+            try:
+                self.camera_widget = Camera(resolution=(640, 480), allow_stretch=True)
+                self.camera_widget.play = True # Asegurar que play sea True
+            except Exception as e:
+                print(f"Error iniciando cámara: {e}")
+                self.ids.camera_placeholder.add_widget(
+                    MDLabel(text="Error al iniciar cámara.\nVerifica drivers.", halign="center")
+                )
+                return
+
         self.ids.camera_placeholder.clear_widgets()
         self.ids.camera_placeholder.add_widget(self.camera_widget)
-        self.camera_widget.play = True
+        
+        # Rotación SOLO para Android
+        if platform == 'android':
+            with self.camera_widget.canvas.before:
+                PushMatrix()
+                Rotate(angle=-90, origin=self.camera_widget.center)
+            with self.camera_widget.canvas.after:
+                PopMatrix()
 
     def on_leave(self, *args):
         """
