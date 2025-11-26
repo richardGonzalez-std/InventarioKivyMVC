@@ -6,5 +6,6 @@ Centraliza las importaciones para facilitar el uso desde el controlador.
 
 from vista.screens.camera_screen import CameraScreen
 from vista.screens.inventory_screen import InventoryScreen
+from vista.screens.admin_screen import AdminScreen
 
-__all__ = ['CameraScreen', 'InventoryScreen']
+__all__ = ['CameraScreen', 'InventoryScreen','AdminScreen']
