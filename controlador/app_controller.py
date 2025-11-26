@@ -1,3 +1,8 @@
+from kivy.utils import platform
+if platform != "android":
+    import os
+    os.environ["KIVY_NO_CONSOLELOG"] = "1"  # Desactivar logs en consola si no es Android
+    os.environ["KIVY_CAMERA"] = "opencv"  # Usar OpenCV en no-Android para pruebas locales
 from kivymd.app import MDApp
 from kivymd.uix.screen import MDScreen
 from kivymd.uix.screenmanager import MDScreenManager
@@ -7,7 +12,7 @@ from kivy.uix.camera import Camera
 from kivy.graphics import PushMatrix, PopMatrix, Rotate
 from kivy.clock import Clock
 import textwrap
-from kivy.utils import platform  # Importación clave para verificar la plataforma
+  # Importación clave para verificar la plataforma
 # --- IMPORTACIONES DE MATERIAL DESIGN 3 ---
 from kivymd.uix.appbar import (
     MDTopAppBar,
@@ -170,11 +175,6 @@ class CameraScreen(MDScreen):
         # 4. Añadir el widget de la cámara al contenedor y encenderla
         self.ids.camera_placeholder.clear_widgets()
         self.ids.camera_placeholder.add_widget(self.camera_widget)
-        with self.camera_widget.canvas.before:
-            PushMatrix()
-            Rotate(angle=-90, origin=self.camera_widget.center)
-        with self.camera_widget.canvas.after:
-            PopMatrix()
         self.camera_widget.play = True
 
     def on_leave(self, *args):
