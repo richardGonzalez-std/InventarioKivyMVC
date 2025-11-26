@@ -57,7 +57,7 @@ class InventoryApp(MDApp):
         """
         if platform == "android":
             print("ANDROID: Verificando permisos de cámara...")
-            from android.permissions import request_permissions, Permission, check_permission
+            from android.permissions import request_permissions, Permission, check_permission # pyright: ignore[reportMissingImports]
             
             # Comprueba si ya tenemos el permiso
             if not check_permission(Permission.CAMERA):

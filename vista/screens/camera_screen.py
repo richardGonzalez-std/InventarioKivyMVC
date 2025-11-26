@@ -32,7 +32,7 @@ class CameraScreen(MDScreen):
         
         # 1. Comprobar si estamos en Android
         if platform == "android":
-            from android.permissions import check_permission, Permission
+            from android.permissions import check_permission, Permission # pyright: ignore[reportMissingImports]
             # 2. Comprobar si el permiso fue concedido (en on_start)
             if not check_permission(Permission.CAMERA):
                 print("PERMISO DENEGADO. Mostrando mensaje de error.")
