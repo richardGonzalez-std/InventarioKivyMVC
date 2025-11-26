@@ -1,0 +1,47 @@
+MDBoxLayout:
+    orientation: "vertical"
+    md_bg_color: self.theme_cls.backgroundColor
+
+    MDTopAppBar:
+        type: "small"
+        MDTopAppBarTitle:
+            text: "Panel de Administración - Inventario"
+            halign: "left"
+    
+    MDBoxLayout:
+        orientation: "horizontal"
+        padding: "20dp"
+        spacing: "20dp"
+
+        # Panel lateral (Menu)
+        MDCard:
+            size_hint_x: 0.3
+            orientation: "vertical"
+            padding: "10dp"
+            
+            MDLabel:
+                text: "Menú Admin"
+                font_style: "Title"
+                role: "large"
+                adaptive_height: True
+            
+            MDDivider:
+            
+            MDList:
+                MDListItem:
+                    MDListItemHeadlineText:
+                        text: "Reportes Globales"
+                MDListItem:
+                    MDListItemHeadlineText:
+                        text: "Gestión de Usuarios"
+                MDListItem:
+                    MDListItemHeadlineText:
+                        text: "Base de Datos"
+
+        # Área principal de contenido
+        MDCard:
+            size_hint_x: 0.7
+            padding: "20dp"
+            MDLabel:
+                text: "Bienvenido al Dashboard Administrativo"
+                halign: "center"

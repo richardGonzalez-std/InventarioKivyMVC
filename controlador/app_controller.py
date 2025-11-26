@@ -26,98 +26,6 @@ from kivymd.uix.label import MDLabel
 # ------------------------------------------
 
 # --- Definición de la Interfaz (KV) ---
-KV_STRING = textwrap.dedent("""
-# 1. Definimos el 'BaseMDNavigationItem'
-<BaseMDNavigationItem>:
-    icon: "camera-document"
-    text: "Scanner"
-
-    MDNavigationItemIcon:
-        icon: root.icon
-
-    MDNavigationItemLabel:
-        text: root.text
-
-
-# 2. Definimos la PANTALLA DE CÁMARA (¡MODIFICADA!)
-<CameraScreen>:
-    MDBoxLayout:
-        orientation: "vertical"
-        
-        MDTopAppBar:
-            type: "small"
-            MDTopAppBarTitle:
-                text: "Cámara de Inventario"
-                halign: "center"
-        
-        # Este es el contenedor vacío donde pondremos la cámara
-        # usando código Python, DESPUÉS de tener el permiso.
-        MDBoxLayout:
-            id: camera_placeholder
-
-
-# 3. Definimos la PANTALLA DE INVENTARIO (reutilizable)
-<InventoryScreen>:
-    MDBoxLayout:
-        orientation: "vertical"
-        
-        MDTopAppBar:
-            id: inventory_toolbar
-            type: "small"
-            MDTopAppBarTitle:
-                text: root.name.capitalize() 
-                halign: "center"
-        
-        MDLabel:
-            text: f"Contenido de {root.name}"
-            halign: "center"
-
-
-# 4. Definimos el WIDGET RAÍZ de la aplicación
-MDBoxLayout:
-    orientation: "vertical"
-    md_bg_color: self.theme_cls.backgroundColor
-
-    MDScreenManager:
-        id: screen_manager
-
-        CameraScreen:
-            name: "camera"
-
-        InventoryScreen:
-            name: "consumos"
-
-        InventoryScreen:
-            name: "mantenimiento"
-
-        InventoryScreen:
-            name: "oficina"
-
-    MDNavigationBar:
-        on_switch_tabs: app.on_switch_tabs(*args)
-
-        BaseMDNavigationItem:
-            name: "camera"
-            text: "Cámara"
-            icon: "camera"
-            active: True
-
-        BaseMDNavigationItem:
-            name: "consumos"
-            text: "Consumos"
-            icon: "food-apple"
-
-        BaseMDNavigationItem:
-            name: "mantenimiento"
-            text: "Mantenimiento"
-            icon: "wrench"
-            
-        BaseMDNavigationItem:
-            name: "oficina"
-            text: "Oficina"
-            icon: "desktop-tower"
-""")
-
 # --- Clases de Python para las Pantallas ---
 
 class BaseMDNavigationItem(MDNavigationItem):
@@ -213,7 +121,13 @@ class InventoryApp(MDApp):
     def build(self):
         self.theme_cls.material_style = "M3"
         # Cargar el KV es AHORA SEGURO, porque no hay <Camera> en él.
-        return Builder.load_string(KV_STRING)
+        if platform == "android":
+            print("ANDROID: Construyendo la aplicación con Material Design 3.")
+            self.theme_cls.theme_style = "Dark"
+            return Builder.load_file("vista/mobile.kv")
+        else:
+            self.theme_cls.theme_style = "Light"
+            return Builder.load_file("vista/pc.kv")
 
     # --- INICIO DEL NUEVO CÓDIGO DE PERMISOS ---
     def on_start(self):
