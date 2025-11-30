@@ -30,6 +30,9 @@ from kivymd.uix.navigationbar import MDNavigationBar, MDNavigationItem
 # Import de nuestras pantallas personalizadas
 from vista.screens import CameraScreen, InventoryScreen, AdminScreen
 
+class BaseMDNavigationItem(MDNavigationItem):
+    """Clase base para el ítem de navegación (necesaria para mobile.kv)."""
+    pass
 
 class InventoryApp(MDApp):
     """
