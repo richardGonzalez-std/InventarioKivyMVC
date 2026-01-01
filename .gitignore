@@ -31,7 +31,6 @@ MANIFEST
 # PyInstaller
 #  Usually these files are created by PyInstaller.
 #  *.spec should be committed to version control if you customize it.
-*.spec
 
 # Installer logs
 pip-log.txt
@@ -68,7 +67,7 @@ docs/_build/
 target/
 
 # Kivy and Buildozer
-.buildozer/
+
 bin/
 *.apk
 *.aab
