@@ -28,23 +28,38 @@ from kivy.core.window import Window
 from kivymd.uix.navigationbar import MDNavigationBar, MDNavigationItem
 
 # Import de nuestras pantallas personalizadas
-from vista.screens import CameraScreen, InventoryScreen, AdminScreen
+from vista.screens import CameraScreen, InventoryScreen, AdminScreen, LoginScreen
+
+from kivymd.uix.screen import MDScreen
+
 
 class BaseMDNavigationItem(MDNavigationItem):
     """Clase base para el ítem de navegación (necesaria para mobile.kv)."""
     pass
 
+
+class MainScreen(MDScreen):
+    """
+    Contenedor principal post-login.
+    Contiene el MDScreenManager interno y la barra de navegación.
+    """
+    pass
+
 class InventoryApp(MDApp):
     """
     Aplicación principal de inventario.
-    
+
     Gestiona:
     - Tema Material Design 3
     - Permisos de cámara en Android
     - Navegación entre pantallas
     - Carga de UI según plataforma
+    - Autenticación de usuarios
     """
-    
+
+    # Usuario actualmente autenticado
+    current_user = None
+
     def build(self):
         """
         Construye la interfaz de usuario.
@@ -154,10 +169,10 @@ class InventoryApp(MDApp):
     ):
         """
         Handler para cambios de tab en la barra de navegación inferior.
-        
+
         Se llama automáticamente cuando el usuario presiona un tab.
         Definido en mobile.kv: on_switch_tabs: app.on_switch_tabs(*args)
-        
+
         Args:
             bar: Instancia de MDNavigationBar
             item: El MDNavigationItem seleccionado
@@ -166,7 +181,27 @@ class InventoryApp(MDApp):
         """
         screen_name = item.name  # Definido en el .kv para cada BaseMDNavigationItem
         print(f"✓ Navegando a pantalla: {screen_name}")
-        self.root.ids.screen_manager.current = screen_name
+        # Acceder al screen_manager dentro de MainScreen
+        main_screen = self.root.get_screen("main")
+        main_screen.ids.screen_manager.current = screen_name
+
+    # ─────────────────────────────────────────────────────────
+    # AUTENTICACIÓN
+    # ─────────────────────────────────────────────────────────
+
+    def logout(self):
+        """
+        Cierra la sesión del usuario actual.
+
+        Limpia el usuario y navega a la pantalla de login.
+        """
+        print(f"✓ Cerrando sesión de: {self.current_user}")
+        self.current_user = None
+        self.root.current = "login"
+
+    def get_current_user(self):
+        """Retorna el usuario actualmente autenticado."""
+        return self.current_user
 
 
 # ─────────────────────────────────────────────────────────

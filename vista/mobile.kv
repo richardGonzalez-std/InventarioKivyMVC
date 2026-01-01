@@ -1,4 +1,17 @@
-# 1. Definimos el 'BaseMDNavigationItem'
+#:import get_color_from_hex kivy.utils.get_color_from_hex
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# COLORES CORPOELEC
+# ═══════════════════════════════════════════════════════════════════════════════
+#:set CORPOELEC_BLUE [0, 0.102, 0.439, 1]
+#:set CORPOELEC_RED [0.89, 0.11, 0.137, 1]
+#:set CORPOELEC_BLUE_HEX "#001A70"
+#:set CORPOELEC_RED_HEX "#E31C23"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# COMPONENTE: BaseMDNavigationItem
+# ═══════════════════════════════════════════════════════════════════════════════
 <BaseMDNavigationItem>:
     icon: "camera-document"
     text: "Scanner"
@@ -10,80 +23,288 @@
         text: root.text
 
 
-# 2. Definimos la PANTALLA DE CÁMARA (¡MODIFICADA!)
+# ═══════════════════════════════════════════════════════════════════════════════
+# PANTALLA: LoginScreen
+# ═══════════════════════════════════════════════════════════════════════════════
+<LoginScreen>:
+    name: "login"
+
+    MDBoxLayout:
+        orientation: "vertical"
+        md_bg_color: self.theme_cls.backgroundColor
+
+        # Espaciador superior
+        MDWidget:
+            size_hint_y: 0.1
+
+        # Logo y branding
+        MDBoxLayout:
+            orientation: "vertical"
+            size_hint_y: None
+            height: "180dp"
+            padding: "20dp"
+            spacing: "10dp"
+
+            MDIcon:
+                icon: "lightning-bolt"
+                font_size: "80sp"
+                pos_hint: {"center_x": 0.5}
+                theme_text_color: "Custom"
+                text_color: CORPOELEC_RED
+
+            MDLabel:
+                text: "SIAM"
+                halign: "center"
+                font_style: "Display"
+                role: "small"
+                theme_text_color: "Custom"
+                text_color: CORPOELEC_BLUE
+                bold: True
+
+            MDLabel:
+                text: "Sistema de Inventario Automático"
+                halign: "center"
+                font_style: "Title"
+                role: "medium"
+                theme_text_color: "Secondary"
+
+        # Formulario de login
+        MDBoxLayout:
+            orientation: "vertical"
+            padding: ["30dp", "20dp", "30dp", "20dp"]
+            spacing: "15dp"
+            size_hint_y: None
+            height: "280dp"
+
+            MDLabel:
+                text: "Iniciar Sesión"
+                halign: "center"
+                font_style: "Headline"
+                role: "small"
+                size_hint_y: None
+                height: "40dp"
+
+            # Campo de usuario
+            MDTextField:
+                id: username_field
+                mode: "outlined"
+                size_hint_x: 1
+
+                MDTextFieldLeadingIcon:
+                    icon: "account"
+
+                MDTextFieldHintText:
+                    text: "Usuario"
+
+            # Campo de contraseña
+            MDTextField:
+                id: password_field
+                mode: "outlined"
+                size_hint_x: 1
+                password: True
+
+                MDTextFieldLeadingIcon:
+                    icon: "lock"
+
+                MDTextFieldHintText:
+                    text: "Contraseña"
+
+                MDTextFieldTrailingIcon:
+                    icon: "eye-off"
+                    on_release:
+                        self.icon = "eye" if self.icon == "eye-off" else "eye-off"
+                        password_field.password = not password_field.password
+
+            # Botón de login
+            MDButton:
+                style: "filled"
+                size_hint_x: 1
+                pos_hint: {"center_x": 0.5}
+                md_bg_color: CORPOELEC_BLUE
+                on_release: root.attempt_login()
+
+                MDButtonText:
+                    text: "INGRESAR"
+                    bold: True
+
+        # Espaciador inferior
+        MDWidget:
+
+        # Footer
+        MDBoxLayout:
+            orientation: "vertical"
+            size_hint_y: None
+            height: "60dp"
+            padding: "10dp"
+
+            MDLabel:
+                text: "CORPOELEC - Comedor de Empleados"
+                halign: "center"
+                font_style: "Label"
+                role: "small"
+                theme_text_color: "Hint"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PANTALLA: MainScreen (Contenedor principal post-login)
+# ═══════════════════════════════════════════════════════════════════════════════
+<MainScreen>:
+    name: "main"
+
+    MDBoxLayout:
+        orientation: "vertical"
+        md_bg_color: self.theme_cls.backgroundColor
+
+        MDScreenManager:
+            id: screen_manager
+
+            CameraScreen:
+                name: "camera"
+
+            InventoryScreen:
+                name: "consumos"
+
+            InventoryScreen:
+                name: "mantenimiento"
+
+            InventoryScreen:
+                name: "oficina"
+
+        MDNavigationBar:
+            on_switch_tabs: app.on_switch_tabs(*args)
+
+            BaseMDNavigationItem:
+                name: "camera"
+                text: "Escanear"
+                icon: "barcode-scan"
+                active: True
+
+            BaseMDNavigationItem:
+                name: "consumos"
+                text: "Entradas"
+                icon: "package-down"
+
+            BaseMDNavigationItem:
+                name: "mantenimiento"
+                text: "Salidas"
+                icon: "package-up"
+
+            BaseMDNavigationItem:
+                name: "oficina"
+                text: "Stock"
+                icon: "warehouse"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PANTALLA: CameraScreen
+# ═══════════════════════════════════════════════════════════════════════════════
 <CameraScreen>:
     MDBoxLayout:
         orientation: "vertical"
-        
+
         MDTopAppBar:
             type: "small"
+            MDTopAppBarLeadingButtonContainer:
+                MDActionTopAppBarButton:
+                    icon: "menu"
+
             MDTopAppBarTitle:
-                text: "Cámara de Inventario"
+                text: "Escanear Código"
                 halign: "center"
-        
-        # Este es el contenedor vacío donde pondremos la cámara
-        # usando código Python, DESPUÉS de tener el permiso.
+
+        # Contenedor de cámara
         MDBoxLayout:
             id: camera_container
 
+        # Controles
+        MDBoxLayout:
+            id: controls_container
+            orientation: "horizontal"
+            size_hint_y: None
+            height: "60dp"
+            padding: "10dp"
+            spacing: "10dp"
 
-# 3. Definimos la PANTALLA DE INVENTARIO (reutilizable)
+        # Status
+        MDLabel:
+            id: status_label
+            text: "Apunte la cámara al código de barras"
+            halign: "center"
+            size_hint_y: None
+            height: "40dp"
+            theme_text_color: "Secondary"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PANTALLA: InventoryScreen (Reutilizable)
+# ═══════════════════════════════════════════════════════════════════════════════
 <InventoryScreen>:
     MDBoxLayout:
         orientation: "vertical"
-        
+
         MDTopAppBar:
             id: inventory_toolbar
             type: "small"
+
+            MDTopAppBarLeadingButtonContainer:
+                MDActionTopAppBarButton:
+                    icon: "menu"
+
             MDTopAppBarTitle:
-                text: root.name.capitalize() 
+                text: root.name.capitalize() if root.name else "Inventario"
                 halign: "center"
-        
-        MDLabel:
-            text: f"Contenido de {root.name}"
-            halign: "center"
+
+            MDTopAppBarTrailingButtonContainer:
+                MDActionTopAppBarButton:
+                    icon: "magnify"
+                MDActionTopAppBarButton:
+                    icon: "filter-variant"
+
+        # Placeholder - será reemplazado con RecycleView
+        MDBoxLayout:
+            orientation: "vertical"
+            padding: "20dp"
+
+            MDIcon:
+                icon: "package-variant"
+                font_size: "64sp"
+                pos_hint: {"center_x": 0.5}
+                theme_text_color: "Custom"
+                text_color: [0.7, 0.7, 0.7, 1]
+
+            MDLabel:
+                text: f"Sección: {root.name}"
+                halign: "center"
+                font_style: "Title"
+                role: "large"
+
+            MDLabel:
+                text: "Lista de materiales próximamente"
+                halign: "center"
+                theme_text_color: "Secondary"
+
+        # FAB para agregar
+        MDAnchorLayout:
+            anchor_x: "right"
+            anchor_y: "bottom"
+            padding: "16dp"
+            size_hint_y: None
+            height: "80dp"
+
+            MDFabButton:
+                icon: "plus"
+                style: "standard"
+                md_bg_color: CORPOELEC_RED
 
 
-# 4. Definimos el WIDGET RAÍZ de la aplicación
-MDBoxLayout:
-    orientation: "vertical"
-    md_bg_color: self.theme_cls.backgroundColor
+# ═══════════════════════════════════════════════════════════════════════════════
+# WIDGET RAÍZ
+# ═══════════════════════════════════════════════════════════════════════════════
+MDScreenManager:
+    id: root_manager
 
-    MDScreenManager:
-        id: screen_manager
+    LoginScreen:
+        name: "login"
 
-        CameraScreen:
-            name: "camera"
-
-        InventoryScreen:
-            name: "consumos"
-
-        InventoryScreen:
-            name: "mantenimiento"
-
-        InventoryScreen:
-            name: "oficina"
-
-    MDNavigationBar:
-        on_switch_tabs: app.on_switch_tabs(*args)
-
-        BaseMDNavigationItem:
-            name: "camera"
-            text: "Cámara"
-            icon: "camera"
-            active: True
-
-        BaseMDNavigationItem:
-            name: "consumos"
-            text: "Consumos"
-            icon: "food-apple"
-
-        BaseMDNavigationItem:
-            name: "mantenimiento"
-            text: "Mantenimiento"
-            icon: "wrench"
-            
-        BaseMDNavigationItem:
-            name: "oficina"
-            text: "Oficina"
-            icon: "desktop-tower"
+    MainScreen:
+        name: "main"
