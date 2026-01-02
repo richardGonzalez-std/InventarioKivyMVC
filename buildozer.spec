@@ -1,109 +1,77 @@
 [app]
 
-# Nombre de la aplicación
+# (str) Title of your application
 title = SIAM
 
-# Nombre del paquete
+# (str) Package name
 package.name = siam
 
-# Dominio del paquete (usado para el identificador completo)
+# (str) Package domain (needed for android/ios packaging)
 package.domain = com.richard
 
-# Código fuente principal
+# (str) Source code where the main.py live
 source.dir = .
 
-# Extensiones a incluir
-source.include_exts = py,png,jpg,kv,atlas,json,ttf,otf
+# (list) Source files to include (let empty to include all the files)
+source.include_exts = py,png,jpg,kv,atlas,db,json
 
-# Patrones a incluir
-source.include_patterns = assets/*,images/*,vista/*,controlador/*,modelo/*
+# (list) List of directories to exclude (let empty to not exclude anything)
+source.exclude_dirs = tests, bin, venv, .venv, .buildozer, __pycache__, hoja de ruta, tools
 
-# Patrones a excluir
-source.exclude_patterns = license,images/*/.git,hoja de ruta/*,tools/*,*.md,tests/*
+# (str) Application versioning
+version = 0.1
 
-# Versión de la aplicación
-version = 0.1.0
+# (list) Application requirements
+requirements = python3,kivy,pillow,pyjnius,https://github.com/kivymd/KivyMD/archive/master.zip,materialyoucolor,materialshapes,asyncgui,asynckivy
 
-# Requisitos de la aplicación
-# NOTA: opencv removido por problemas de compilación en Colab
-# Usar camera4kivy o la cámara nativa de Android
-requirements = python3,kivy==2.3.1,kivymd==2.0.1.dev0,pillow,android,plyer
-
-# Permisos de Android
-android.permissions = CAMERA,INTERNET,WRITE_EXTERNAL_STORAGE,READ_EXTERNAL_STORAGE
-
-# Características de Android
-android.features = android.hardware.camera,android.hardware.camera.autofocus
-
-# Orientación de pantalla
+# (list) Supported orientations
 orientation = portrait
 
-# Pantalla completa
+#
+# Android specific
+#
+
+# (bool) Indicate if the application should be fullscreen or not
 fullscreen = 0
 
-# Ícono de la aplicación (crear assets/icon.png de 512x512)
-#icon.filename = assets/icon.png
+# (list) Permissions
+android.permissions = INTERNET, CAMERA, WRITE_EXTERNAL_STORAGE, READ_EXTERNAL_STORAGE
 
-# Presplash/splash screen
-#presplash.filename = assets/presplash.png
+# (int) Target Android API, should be as high as possible.
+android.api = 34
 
-# API de Android (target)
-android.api = 33
-
-# API mínima de Android
+# (int) Minimum API your APK / AAB will support.
 android.minapi = 21
 
-# NDK API
-android.ndk_api = 21
+# (list) The Android archs to build for
+android.archs = armeabi-v7a, arm64-v8a
 
-# SDK y NDK (Buildozer los descarga automáticamente)
-#android.sdk_path =
-#android.ndk_path =
+# (bool) enables Android auto backup feature (Android API >=23)
+android.allow_backup = True
 
-# Arquitecturas a compilar
-android.archs = arm64-v8a,armeabi-v7a
+#
+# Python for android (p4a) specific
+#
 
-# Aceptar licencias automáticamente
-android.accept_sdk_license = True
+# (str) python-for-android branch to use
+#p4a.branch = master
 
-# Gradle dependencies para cámara
-android.gradle_dependencies = androidx.camera:camera-camera2:1.1.0
+#
+# iOS specific
+#
 
-# Activar AndroidX
-android.enable_androidx = True
+ios.kivy_ios_url = https://github.com/kivy/kivy-ios
+ios.kivy_ios_branch = master
 
-# Archivo de entrada
-#android.entrypoint = org.kivy.android.PythonActivity
+ios.ios_deploy_url = https://github.com/phonegap/ios-deploy
+ios.ios_deploy_branch = 1.10.0
 
-# Whitelist de permisos
-android.whitelist = lib-dynload/_csv.so
-
-# Modo de compilación
-#android.release_artifact = apk
-#android.debug_artifact = apk
-
-# Logcat filters
-android.logcat_filters = *:S python:D
-
-# Copiar bibliotecas
-#android.copy_libs = 1
-
-# Metadatos adicionales
-#android.meta_data =
-
-# Características de la pantalla
-android.screen = normal,large,xlarge
+ios.codesign.allowed = false
 
 [buildozer]
 
-# Nivel de log (0 = error, 1 = info, 2 = debug)
+# (int) Log level (0 = error only, 1 = info, 2 = debug (with command output))
 log_level = 2
 
-# Mostrar advertencias
+# (int) Display warning if buildozer is run as root (0 = False, 1 = True)
 warn_on_root = 1
-
-# Directorio de build
-build_dir = ./.buildozer
-
-# Directorio de salida del APK
-bin_dir = ./bin
