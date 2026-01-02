@@ -25,7 +25,9 @@ source.exclude_patterns = license,images/*/.git,hoja de ruta/*,tools/*,*.md,test
 version = 0.1.0
 
 # Requisitos de la aplicación
-requirements = python3,kivy==2.3.1,kivymd==2.0.1.dev0,pillow,pyzbar,opencv,android,plyer
+# NOTA: opencv removido por problemas de compilación en Colab
+# Usar camera4kivy o la cámara nativa de Android
+requirements = python3,kivy==2.3.1,kivymd==2.0.1.dev0,pillow,android,plyer
 
 # Permisos de Android
 android.permissions = CAMERA,INTERNET,WRITE_EXTERNAL_STORAGE,READ_EXTERNAL_STORAGE
