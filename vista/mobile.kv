@@ -109,12 +109,6 @@
                 MDTextFieldHintText:
                     text: "Contraseña"
 
-                MDTextFieldTrailingIcon:
-                    icon: "eye-off"
-                    on_release:
-                        self.icon = "eye" if self.icon == "eye-off" else "eye-off"
-                        password_field.password = not password_field.password
-
             # Botón de login
             MDButton:
                 style: "filled"
