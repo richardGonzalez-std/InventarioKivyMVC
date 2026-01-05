@@ -66,12 +66,25 @@ class CameraScreen(MDScreen):
                     allow_stretch=True,
                     play=True
                 )
-                
-                # --- CORRECCIÓN 1: ROTACIÓN ---
-                # Hemos eliminado la rotación manual. Kivy suele manejar esto bien ahora.
-                # Si la cámara sale rotada 90 grados, avísame y aplicaremos una 
-                # rotación basada en coordenadas de textura, no en canvas.before.
-                
+
+                # --- CORRECCIÓN DE ROTACIÓN PARA ANDROID ---
+                if platform == "android":
+                    # Rotar 90 grados en sentido horario para corregir orientación
+                    with self.camera_widget.canvas.before:
+                        PushMatrix()
+                        self._rotation = Rotate(
+                            angle=-90,
+                            origin=self.camera_widget.center
+                        )
+                    with self.camera_widget.canvas.after:
+                        PopMatrix()
+
+                    # Actualizar origen de rotación cuando cambie el tamaño
+                    self.camera_widget.bind(
+                        size=self._update_rotation_origin,
+                        pos=self._update_rotation_origin
+                    )
+
             except Exception as e:
                 print(f"✗ Error al crear cámara: {e}")
                 self._show_error_message("Error al iniciar cámara.")
@@ -178,3 +191,8 @@ class CameraScreen(MDScreen):
         if 'camera_container' in self.ids:
             self.ids.camera_container.clear_widgets()
             self.ids.camera_container.add_widget(MDLabel(text=message, halign="center", theme_text_color="Error"))
+
+    def _update_rotation_origin(self, *args):
+        """Actualiza el origen de rotación cuando cambia el tamaño del widget."""
+        if hasattr(self, '_rotation') and self.camera_widget:
+            self._rotation.origin = self.camera_widget.center
