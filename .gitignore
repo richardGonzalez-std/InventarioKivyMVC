@@ -107,3 +107,6 @@ ipython_config.py
 
 # mypy
 .mypy_cache/
+# Firebase credentials (secrets - DO NOT COMMIT)
+firebase-credentials.json
+google-services.json

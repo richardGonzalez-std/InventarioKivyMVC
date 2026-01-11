@@ -10,8 +10,11 @@ from kivymd.uix.screen import MDScreen
 from kivymd.uix.label import MDLabel
 from kivymd.uix.button import MDButton, MDButtonText
 from kivymd.uix.boxlayout import MDBoxLayout
+from kivymd.uix.dialog import MDDialog, MDDialogHeadlineText, MDDialogSupportingText, MDDialogButtonContainer, MDDialogContentContainer
+from kivymd.uix.textfield import MDTextField, MDTextFieldHintText
+from kivymd.uix.snackbar import MDSnackbar, MDSnackbarText
 
-# Para escaneo de códigos (mantenemos tu lógica de importación)
+# Para escaneo de códigos
 try:
     from pyzbar import pyzbar
     import cv2
@@ -20,17 +23,34 @@ try:
 except ImportError:
     BARCODE_SUPPORT = False
 
+# Repositorio para búsqueda en BD
+try:
+    from modelo.repository import ProductoRepository
+    REPOSITORY_AVAILABLE = True
+except ImportError:
+    REPOSITORY_AVAILABLE = False
+    print("⚠ Repository no disponible")
+
 class CameraScreen(MDScreen):
     """
-    Pantalla de cámara con correcciones de ciclo de vida y layout.
+    Pantalla de cámara con escaneo de códigos y búsqueda en BD.
     """
-    
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.camera_widget = None
         self.scanning_active = False
         self.last_scanned_code = None
         self.scan_event = None
+        self.dialog = None
+        self.current_producto = None
+
+        # Inicializar repositorio
+        if REPOSITORY_AVAILABLE:
+            self.repository = ProductoRepository()
+            self.repository.conectar()
+        else:
+            self.repository = None
     
     def on_enter(self, *args):
         """Inicia la cámara al entrar."""
@@ -166,9 +186,201 @@ class CameraScreen(MDScreen):
             print(f"✗ Error scan: {e}")
 
     def on_code_scanned(self, code_data, code_type):
-        print(f"✓ CÓDIGO: {code_data}")
+        """Procesa código escaneado y busca en BD."""
+        print(f"✓ CÓDIGO: {code_data} (tipo: {code_type})")
         self.stop_scanning()
-        if 'status_label' in self.ids: self.ids.status_label.text = f"✓ Código: {code_data}"
+
+        if 'status_label' in self.ids:
+            self.ids.status_label.text = f"🔍 Buscando: {code_data}..."
+
+        # Buscar en repositorio (cache + Firebase)
+        if self.repository:
+            self.repository.buscar_por_codigo(
+                codigo_barras=code_data,
+                callback=lambda producto: self._mostrar_resultado(producto, code_data)
+            )
+        else:
+            self._mostrar_resultado(None, code_data)
+
+    def _mostrar_resultado(self, producto, codigo):
+        """Muestra resultado de búsqueda en diálogo."""
+        if producto:
+            # Producto encontrado
+            if 'status_label' in self.ids:
+                self.ids.status_label.text = f"✓ {producto.get('nombre', 'Producto')}"
+            self._mostrar_dialog_producto(producto)
+        else:
+            # Producto no encontrado
+            if 'status_label' in self.ids:
+                self.ids.status_label.text = f"⚠ No encontrado: {codigo}"
+            self._mostrar_dialog_nuevo(codigo)
+
+    def _mostrar_dialog_producto(self, producto):
+        """Muestra diálogo con info del producto encontrado."""
+        if self.dialog:
+            self.dialog.dismiss()
+
+        nombre = producto.get('nombre', 'Sin nombre')
+        cantidad = producto.get('cantidad', 0)
+        ubicacion = producto.get('ubicacion', 'No especificada')
+        codigo = producto.get('codigo_barras', '')
+
+        self.current_producto = producto
+
+        self.dialog = MDDialog(
+            MDDialogHeadlineText(text=nombre),
+            MDDialogSupportingText(
+                text=f"📦 Cantidad: {cantidad}\n📍 Ubicación: {ubicacion}\n🏷️ Código: {codigo}"
+            ),
+            MDDialogButtonContainer(
+                MDButton(
+                    MDButtonText(text="Cerrar"),
+                    style="text",
+                    on_release=lambda x: self.dialog.dismiss()
+                ),
+                MDButton(
+                    MDButtonText(text="➖ Salida"),
+                    style="outlined",
+                    on_release=lambda x: self._mostrar_dialog_cantidad("salida")
+                ),
+                MDButton(
+                    MDButtonText(text="➕ Entrada"),
+                    style="filled",
+                    on_release=lambda x: self._mostrar_dialog_cantidad("entrada")
+                ),
+                spacing="8dp",
+            ),
+        )
+        self.dialog.open()
+
+    def _mostrar_dialog_nuevo(self, codigo):
+        """Muestra diálogo para crear nuevo producto."""
+        if self.dialog:
+            self.dialog.dismiss()
+
+        self.dialog = MDDialog(
+            MDDialogHeadlineText(text="Producto no encontrado"),
+            MDDialogSupportingText(
+                text=f"El código {codigo} no existe en la base de datos.\n\n¿Desea registrarlo?"
+            ),
+            MDDialogButtonContainer(
+                MDButton(
+                    MDButtonText(text="Cancelar"),
+                    style="text",
+                    on_release=lambda x: self.dialog.dismiss()
+                ),
+                MDButton(
+                    MDButtonText(text="Registrar"),
+                    style="filled",
+                    on_release=lambda x: self._ir_a_registro(codigo)
+                ),
+                spacing="8dp",
+            ),
+        )
+        self.dialog.open()
+
+    def _mostrar_dialog_cantidad(self, tipo_movimiento):
+        """Muestra diálogo para ingresar cantidad."""
+        if self.dialog:
+            self.dialog.dismiss()
+
+        titulo = "Registrar Entrada" if tipo_movimiento == "entrada" else "Registrar Salida"
+
+        # Campo de cantidad
+        self.cantidad_field = MDTextField(
+            MDTextFieldHintText(text="Cantidad"),
+            mode="outlined",
+            input_filter="int",
+        )
+
+        self.dialog = MDDialog(
+            MDDialogHeadlineText(text=titulo),
+            MDDialogContentContainer(
+                MDBoxLayout(
+                    self.cantidad_field,
+                    orientation="vertical",
+                    spacing="12dp",
+                    padding="12dp",
+                    adaptive_height=True,
+                ),
+            ),
+            MDDialogButtonContainer(
+                MDButton(
+                    MDButtonText(text="Cancelar"),
+                    style="text",
+                    on_release=lambda x: self.dialog.dismiss()
+                ),
+                MDButton(
+                    MDButtonText(text="Confirmar"),
+                    style="filled",
+                    on_release=lambda x: self._procesar_movimiento(tipo_movimiento)
+                ),
+                spacing="8dp",
+            ),
+        )
+        self.dialog.open()
+
+    def _procesar_movimiento(self, tipo):
+        """Procesa entrada o salida de inventario."""
+        if not self.current_producto or not hasattr(self, 'cantidad_field'):
+            return
+
+        try:
+            cantidad = int(self.cantidad_field.text or 0)
+            if cantidad <= 0:
+                self._mostrar_snackbar("Ingrese cantidad válida")
+                return
+        except ValueError:
+            self._mostrar_snackbar("Cantidad inválida")
+            return
+
+        codigo = self.current_producto.get('codigo_barras')
+
+        if self.dialog:
+            self.dialog.dismiss()
+
+        if self.repository:
+            if tipo == "entrada":
+                self.repository.registrar_entrada(
+                    codigo_barras=codigo,
+                    cantidad=cantidad,
+                    usuario="usuario_app",  # TODO: obtener usuario real
+                    callback=lambda ok, msg: self._movimiento_completado(ok, tipo, cantidad, msg)
+                )
+            else:
+                self.repository.registrar_salida(
+                    codigo_barras=codigo,
+                    cantidad=cantidad,
+                    usuario="usuario_app",
+                    callback=lambda ok, msg: self._movimiento_completado(ok, tipo, cantidad, msg)
+                )
+        else:
+            self._mostrar_snackbar("⚠ Repositorio no disponible")
+
+    def _movimiento_completado(self, exito, tipo, cantidad, mensaje=""):
+        """Callback cuando se completa un movimiento."""
+        if exito:
+            emoji = "➕" if tipo == "entrada" else "➖"
+            self._mostrar_snackbar(f"{emoji} {tipo.capitalize()}: {cantidad} unidades")
+        else:
+            self._mostrar_snackbar(mensaje or f"✗ Error al registrar {tipo}")
+
+    def _ir_a_registro(self, codigo):
+        """Navega a pantalla de registro con el código."""
+        if self.dialog:
+            self.dialog.dismiss()
+        # TODO: Navegar a pantalla de registro de productos
+        self._mostrar_snackbar(f"📝 Registrar: {codigo}")
+        print(f"TODO: Navegar a registro con código {codigo}")
+
+    def _mostrar_snackbar(self, mensaje):
+        """Muestra mensaje snackbar."""
+        MDSnackbar(
+            MDSnackbarText(text=mensaje),
+            y="24dp",
+            pos_hint={"center_x": 0.5},
+            size_hint_x=0.9,
+        ).open()
 
     def capture_photo(self, *args):
         if not self.camera_widget or not self.camera_widget.texture: return
