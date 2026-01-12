@@ -14,14 +14,31 @@ from kivymd.uix.dialog import MDDialog, MDDialogHeadlineText, MDDialogSupporting
 from kivymd.uix.textfield import MDTextField, MDTextFieldHintText
 from kivymd.uix.snackbar import MDSnackbar, MDSnackbarText
 
-# Para escaneo de códigos
+# Para escaneo de códigos (PC)
 try:
     from pyzbar import pyzbar
     import cv2
     import numpy as np
-    BARCODE_SUPPORT = True
+    PYZBAR_AVAILABLE = True
 except ImportError:
-    BARCODE_SUPPORT = False
+    PYZBAR_AVAILABLE = False
+
+# Para escaneo en Android via ZXing Intent
+ANDROID_SCANNER = False
+_autoclass = None
+_cast = None
+_activity = None
+
+if platform == "android":
+    try:
+        from jnius import autoclass as _autoclass, cast as _cast
+        from android import activity as _activity
+        ANDROID_SCANNER = True
+    except ImportError:
+        pass
+
+# Determinar soporte de escaneo
+BARCODE_SUPPORT = PYZBAR_AVAILABLE or ANDROID_SCANNER
 
 # Repositorio para búsqueda en BD
 try:
@@ -135,25 +152,170 @@ class CameraScreen(MDScreen):
     # tal como los tenías en tu archivo original.
 
     def _create_controls(self):
-        """Crea los botones de control (Copia de tu código original)."""
+        """Crea los botones de control según plataforma."""
         controls = self.ids.controls_container
         controls.clear_widgets()
-        
-        if BARCODE_SUPPORT:
+
+        if platform == "android":
+            # Android: Botón para escanear con ZXing o entrada manual
+            scan_button = MDButton(style="elevated", size_hint_x=0.5, on_release=self._scan_android)
+            scan_button.add_widget(MDButtonText(text="Escanear"))
+            controls.add_widget(scan_button)
+
+            # Botón entrada manual
+            manual_button = MDButton(style="outlined", size_hint_x=0.5, on_release=self._entrada_manual)
+            manual_button.add_widget(MDButtonText(text="Ingresar Código"))
+            controls.add_widget(manual_button)
+        elif PYZBAR_AVAILABLE:
+            # PC con pyzbar
             self.scan_button = MDButton(style="elevated", size_hint_x=0.5, on_release=self.toggle_scanning)
-            self.scan_button.add_widget(MDButtonText(text="🔍 Iniciar Escaneo"))
+            self.scan_button.add_widget(MDButtonText(text="Iniciar Escaneo"))
             controls.add_widget(self.scan_button)
+
+            capture_button = MDButton(style="filled", size_hint_x=0.5, on_release=self.capture_photo)
+            capture_button.add_widget(MDButtonText(text="Capturar"))
+            controls.add_widget(capture_button)
         else:
-            disabled_button = MDButton(style="elevated", size_hint_x=0.5, disabled=True)
-            disabled_button.add_widget(MDButtonText(text="⚠ Pyzbar faltante"))
-            controls.add_widget(disabled_button)
-        
-        capture_button = MDButton(style="filled", size_hint_x=0.5, on_release=self.capture_photo)
-        capture_button.add_widget(MDButtonText(text="📸 Capturar"))
-        controls.add_widget(capture_button)
+            # PC sin pyzbar - solo entrada manual
+            manual_button = MDButton(style="elevated", size_hint_x=0.5, on_release=self._entrada_manual)
+            manual_button.add_widget(MDButtonText(text="Ingresar Código"))
+            controls.add_widget(manual_button)
+
+    def _scan_android(self, *args):
+        """Inicia escaneo en Android usando ZXing Intent."""
+        if not ANDROID_SCANNER:
+            self._mostrar_snackbar("Escáner no disponible")
+            self._entrada_manual()
+            return
+
+        try:
+            Intent = _autoclass('android.content.Intent')
+            PythonActivity = _autoclass('org.kivy.android.PythonActivity')
+
+            # Intent para ZXing
+            intent = Intent("com.google.zxing.client.android.SCAN")
+            intent.putExtra("SCAN_MODE", "PRODUCT_MODE")
+
+            # Registrar callback para resultado
+            _activity.bind(on_activity_result=self._on_scan_result)
+
+            # Iniciar actividad
+            current_activity = _cast('android.app.Activity', PythonActivity.mActivity)
+            current_activity.startActivityForResult(intent, 0)
+
+        except Exception as e:
+            print(f"Error iniciando escáner: {e}")
+            # Fallback: mostrar diálogo para instalar ZXing o entrada manual
+            self._mostrar_dialog_sin_escaner()
+
+    def _on_scan_result(self, request_code, result_code, intent):
+        """Callback cuando ZXing devuelve resultado."""
+        if request_code != 0:
+            return
+
+        try:
+            Activity = _autoclass('android.app.Activity')
+            if result_code == Activity.RESULT_OK and intent:
+                # Obtener código escaneado
+                codigo = intent.getStringExtra("SCAN_RESULT")
+                formato = intent.getStringExtra("SCAN_RESULT_FORMAT")
+
+                if codigo:
+                    Clock.schedule_once(lambda dt: self.on_code_scanned(codigo, formato or "BARCODE"), 0)
+        except Exception as e:
+            print(f"Error procesando resultado: {e}")
+
+        # Desregistrar callback
+        _activity.unbind(on_activity_result=self._on_scan_result)
+
+    def _mostrar_dialog_sin_escaner(self):
+        """Muestra opciones cuando no hay escáner disponible."""
+        if self.dialog:
+            self.dialog.dismiss()
+
+        self.dialog = MDDialog(
+            MDDialogHeadlineText(text="Escáner no disponible"),
+            MDDialogSupportingText(
+                text="No se detectó app de escaneo.\n\nPuedes instalar 'Barcode Scanner' de ZXing o ingresar el código manualmente."
+            ),
+            MDDialogButtonContainer(
+                MDButton(
+                    MDButtonText(text="Cancelar"),
+                    style="text",
+                    on_release=lambda x: self.dialog.dismiss()
+                ),
+                MDButton(
+                    MDButtonText(text="Ingresar Manual"),
+                    style="filled",
+                    on_release=lambda x: self._entrada_manual_desde_dialog()
+                ),
+                spacing="8dp",
+            ),
+        )
+        self.dialog.open()
+
+    def _entrada_manual_desde_dialog(self, *args):
+        """Cierra diálogo y abre entrada manual."""
+        if self.dialog:
+            self.dialog.dismiss()
+        Clock.schedule_once(lambda dt: self._entrada_manual(), 0.2)
+
+    def _entrada_manual(self, *args):
+        """Muestra diálogo para ingresar código manualmente."""
+        if self.dialog:
+            self.dialog.dismiss()
+
+        self.codigo_manual_field = MDTextField(
+            MDTextFieldHintText(text="Código de barras"),
+            mode="outlined",
+        )
+
+        self.dialog = MDDialog(
+            MDDialogHeadlineText(text="Ingresar Código"),
+            MDDialogContentContainer(
+                MDBoxLayout(
+                    self.codigo_manual_field,
+                    orientation="vertical",
+                    spacing="12dp",
+                    padding="12dp",
+                    adaptive_height=True,
+                ),
+            ),
+            MDDialogButtonContainer(
+                MDButton(
+                    MDButtonText(text="Cancelar"),
+                    style="text",
+                    on_release=lambda x: self.dialog.dismiss()
+                ),
+                MDButton(
+                    MDButtonText(text="Buscar"),
+                    style="filled",
+                    on_release=self._procesar_codigo_manual
+                ),
+                spacing="8dp",
+            ),
+        )
+        self.dialog.open()
+
+    def _procesar_codigo_manual(self, *args):
+        """Procesa código ingresado manualmente."""
+        if not hasattr(self, 'codigo_manual_field'):
+            return
+
+        codigo = self.codigo_manual_field.text.strip()
+
+        if not codigo:
+            self._mostrar_snackbar("Ingrese un código")
+            return
+
+        if self.dialog:
+            self.dialog.dismiss()
+
+        # Procesar como si fuera escaneado
+        self.on_code_scanned(codigo, "MANUAL")
 
     def toggle_scanning(self, *args):
-        if not BARCODE_SUPPORT: return
+        if not PYZBAR_AVAILABLE: return
         if self.scanning_active: self.stop_scanning()
         else: self.start_scanning()
 
@@ -393,6 +555,9 @@ class CameraScreen(MDScreen):
             print(f"✗ Error foto: {e}")
 
     def _texture_to_numpy(self, texture):
+        """Convierte textura Kivy a numpy array (requiere cv2/numpy)."""
+        if not PYZBAR_AVAILABLE:
+            return None
         size = texture.size
         pixels = texture.pixels
         arr = np.frombuffer(pixels, dtype=np.uint8)
