@@ -23,19 +23,48 @@ try:
 except ImportError:
     PYZBAR_AVAILABLE = False
 
-# Para escaneo en Android via ZXing Intent
+# Para escaneo en Android via ZXing Core embebido
 ANDROID_SCANNER = False
 _autoclass = None
 _cast = None
 _activity = None
+_zxing_reader = None
 
 if platform == "android":
     try:
         from jnius import autoclass as _autoclass, cast as _cast
         from android import activity as _activity
+
+        # Importar clases ZXing Core
+        _MultiFormatReader = _autoclass('com.google.zxing.MultiFormatReader')
+        _BinaryBitmap = _autoclass('com.google.zxing.BinaryBitmap')
+        _HybridBinarizer = _autoclass('com.google.zxing.common.HybridBinarizer')
+        _RGBLuminanceSource = _autoclass('com.google.zxing.RGBLuminanceSource')
+        _DecodeHintType = _autoclass('com.google.zxing.DecodeHintType')
+        _BarcodeFormat = _autoclass('com.google.zxing.BarcodeFormat')
+        _HashMap = _autoclass('java.util.HashMap')
+        _ArrayList = _autoclass('java.util.ArrayList')
+
+        # Crear reader con hints para todos los formatos
+        _zxing_reader = _MultiFormatReader()
+        hints = _HashMap()
+        formats = _ArrayList()
+        formats.add(_BarcodeFormat.QR_CODE)
+        formats.add(_BarcodeFormat.EAN_13)
+        formats.add(_BarcodeFormat.EAN_8)
+        formats.add(_BarcodeFormat.UPC_A)
+        formats.add(_BarcodeFormat.UPC_E)
+        formats.add(_BarcodeFormat.CODE_128)
+        formats.add(_BarcodeFormat.CODE_39)
+        hints.put(_DecodeHintType.POSSIBLE_FORMATS, formats)
+        hints.put(_DecodeHintType.TRY_HARDER, True)
+        _zxing_reader.setHints(hints)
+
         ANDROID_SCANNER = True
-    except ImportError:
-        pass
+        print("✓ ZXing Core inicializado")
+    except Exception as e:
+        print(f"⚠ ZXing Core no disponible: {e}")
+        ANDROID_SCANNER = False
 
 # Determinar soporte de escaneo
 BARCODE_SUPPORT = PYZBAR_AVAILABLE or ANDROID_SCANNER
@@ -156,14 +185,19 @@ class CameraScreen(MDScreen):
         controls = self.ids.controls_container
         controls.clear_widgets()
 
-        if platform == "android":
-            # Android: Botón para escanear con ZXing o entrada manual
-            scan_button = MDButton(style="elevated", size_hint_x=0.5, on_release=self._scan_android)
-            scan_button.add_widget(MDButtonText(text="Escanear"))
-            controls.add_widget(scan_button)
+        if platform == "android" and ANDROID_SCANNER:
+            # Android con ZXing Core embebido
+            self.scan_button = MDButton(style="elevated", size_hint_x=0.5, on_release=self.toggle_scanning_android)
+            self.scan_button.add_widget(MDButtonText(text="Escanear"))
+            controls.add_widget(self.scan_button)
 
             # Botón entrada manual
             manual_button = MDButton(style="outlined", size_hint_x=0.5, on_release=self._entrada_manual)
+            manual_button.add_widget(MDButtonText(text="Manual"))
+            controls.add_widget(manual_button)
+        elif platform == "android":
+            # Android sin ZXing - solo entrada manual
+            manual_button = MDButton(style="elevated", size_hint_x=1, on_release=self._entrada_manual)
             manual_button.add_widget(MDButtonText(text="Ingresar Código"))
             controls.add_widget(manual_button)
         elif PYZBAR_AVAILABLE:
@@ -181,84 +215,69 @@ class CameraScreen(MDScreen):
             manual_button.add_widget(MDButtonText(text="Ingresar Código"))
             controls.add_widget(manual_button)
 
-    def _scan_android(self, *args):
-        """Inicia escaneo en Android usando ZXing Intent."""
-        if not ANDROID_SCANNER:
-            self._mostrar_snackbar("Escáner no disponible")
-            self._entrada_manual()
+    def toggle_scanning_android(self, *args):
+        """Toggle escaneo en Android usando ZXing Core."""
+        if self.scanning_active:
+            self.stop_scanning()
+        else:
+            self.start_scanning_android()
+
+    def start_scanning_android(self):
+        """Inicia escaneo continuo con ZXing Core."""
+        self.scanning_active = True
+        self.last_scanned_code = None
+        if hasattr(self, 'scan_button'):
+            self.scan_button.children[0].text = "Detener"
+        if 'status_label' in self.ids:
+            self.ids.status_label.text = "Escaneando..."
+        # Escanear cada 300ms
+        self.scan_event = Clock.schedule_interval(self.scan_frame_android, 0.3)
+
+    def scan_frame_android(self, dt):
+        """Escanea frame actual usando ZXing Core."""
+        if not self.camera_widget or not self.camera_widget.texture:
+            return
+        if not ANDROID_SCANNER or not _zxing_reader:
             return
 
         try:
-            Intent = _autoclass('android.content.Intent')
-            PythonActivity = _autoclass('org.kivy.android.PythonActivity')
+            texture = self.camera_widget.texture
+            width, height = int(texture.width), int(texture.height)
+            pixels = texture.pixels
 
-            # Intent para ZXing
-            intent = Intent("com.google.zxing.client.android.SCAN")
-            intent.putExtra("SCAN_MODE", "PRODUCT_MODE")
+            # Convertir pixels a array de enteros RGB
+            pixel_array = [0] * (width * height)
+            for i in range(width * height):
+                idx = i * 4  # RGBA
+                r = pixels[idx]
+                g = pixels[idx + 1]
+                b = pixels[idx + 2]
+                # Convertir a formato ARGB int
+                pixel_array[i] = (255 << 24) | (r << 16) | (g << 8) | b
 
-            # Registrar callback para resultado
-            _activity.bind(on_activity_result=self._on_scan_result)
+            # Crear LuminanceSource y BinaryBitmap
+            source = _RGBLuminanceSource(width, height, pixel_array)
+            bitmap = _BinaryBitmap(_HybridBinarizer(source))
 
-            # Iniciar actividad
-            current_activity = _cast('android.app.Activity', PythonActivity.mActivity)
-            current_activity.startActivityForResult(intent, 0)
+            # Intentar decodificar
+            result = _zxing_reader.decodeWithState(bitmap)
+
+            if result:
+                code_data = result.getText()
+                code_type = result.getBarcodeFormat().toString()
+
+                if code_data and code_data != self.last_scanned_code:
+                    self.last_scanned_code = code_data
+                    Clock.schedule_once(lambda dt: self.on_code_scanned(code_data, code_type), 0)
 
         except Exception as e:
-            print(f"Error iniciando escáner: {e}")
-            # Fallback: mostrar diálogo para instalar ZXing o entrada manual
-            self._mostrar_dialog_sin_escaner()
-
-    def _on_scan_result(self, request_code, result_code, intent):
-        """Callback cuando ZXing devuelve resultado."""
-        if request_code != 0:
-            return
-
-        try:
-            Activity = _autoclass('android.app.Activity')
-            if result_code == Activity.RESULT_OK and intent:
-                # Obtener código escaneado
-                codigo = intent.getStringExtra("SCAN_RESULT")
-                formato = intent.getStringExtra("SCAN_RESULT_FORMAT")
-
-                if codigo:
-                    Clock.schedule_once(lambda dt: self.on_code_scanned(codigo, formato or "BARCODE"), 0)
-        except Exception as e:
-            print(f"Error procesando resultado: {e}")
-
-        # Desregistrar callback
-        _activity.unbind(on_activity_result=self._on_scan_result)
-
-    def _mostrar_dialog_sin_escaner(self):
-        """Muestra opciones cuando no hay escáner disponible."""
-        if self.dialog:
-            self.dialog.dismiss()
-
-        self.dialog = MDDialog(
-            MDDialogHeadlineText(text="Escáner no disponible"),
-            MDDialogSupportingText(
-                text="No se detectó app de escaneo.\n\nPuedes instalar 'Barcode Scanner' de ZXing o ingresar el código manualmente."
-            ),
-            MDDialogButtonContainer(
-                MDButton(
-                    MDButtonText(text="Cancelar"),
-                    style="text",
-                    on_release=lambda x: self.dialog.dismiss()
-                ),
-                MDButton(
-                    MDButtonText(text="Ingresar Manual"),
-                    style="filled",
-                    on_release=lambda x: self._entrada_manual_desde_dialog()
-                ),
-                spacing="8dp",
-            ),
-        )
-        self.dialog.open()
-
-    def _entrada_manual_desde_dialog(self, *args):
-        """Cierra diálogo y abre entrada manual."""
-        if self.dialog:
-            self.dialog.dismiss()
-        Clock.schedule_once(lambda dt: self._entrada_manual(), 0.2)
+            # NotFoundException es normal cuando no hay código visible
+            error_name = type(e).__name__
+            if "NotFoundException" not in str(e) and "NotFoundException" not in error_name:
+                print(f"Error scan: {e}")
+        finally:
+            if _zxing_reader:
+                _zxing_reader.reset()
 
     def _entrada_manual(self, *args):
         """Muestra diálogo para ingresar código manualmente."""

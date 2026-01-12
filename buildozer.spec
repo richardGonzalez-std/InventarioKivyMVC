@@ -46,6 +46,9 @@ android.minapi = 21
 # (list) The Android archs to build for
 android.archs = armeabi-v7a, arm64-v8a
 
+# (list) Java/Gradle dependencies
+android.gradle_dependencies = com.google.zxing:core:3.5.2
+
 # (bool) enables Android auto backup feature (Android API >=23)
 android.allow_backup = True
 
