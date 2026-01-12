@@ -119,6 +119,12 @@ class ColabBuilder:
         """Sincroniza el proyecto desde Drive al directorio de trabajo."""
         print(f"Sincronizando proyecto desde {self.drive_project_path}...")
 
+        # Asegurar directorio seguro antes de borrar
+        try:
+            os.chdir(self.WORK_DIR)
+        except:
+            pass
+
         if os.path.exists(self.work_path):
             shutil.rmtree(self.work_path)
 
@@ -182,6 +188,11 @@ class ColabBuilder:
 
     def clean(self):
         """Limpia archivos temporales."""
+        try:
+            os.chdir(self.WORK_DIR)
+        except:
+            pass
+
         if os.path.exists(self.work_path):
             shutil.rmtree(self.work_path)
             print("Directorio de trabajo limpiado")
