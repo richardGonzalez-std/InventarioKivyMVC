@@ -13,7 +13,7 @@ package.domain = com.richard
 source.dir = .
 
 # (list) Source files to include (let empty to include all the files)
-source.include_exts = py,png,jpg,kv,atlas,db,json
+source.include_exts = py,png,jpg,jpeg,kv,atlas,db,json
 
 # (list) List of directories to exclude (let empty to not exclude anything)
 source.exclude_dirs = tests, bin, venv, .venv, .buildozer, __pycache__, hoja de ruta, tools
@@ -26,6 +26,12 @@ requirements = python3,kivy,pillow,pyjnius,https://github.com/kivymd/KivyMD/arch
 
 # (list) Supported orientations
 orientation = portrait
+
+# (str) Icon of the application
+icon.filename = assets/logo.jpeg
+
+# (str) Presplash of the application (shown while loading)
+presplash.filename = assets/logo.jpeg
 
 #
 # Android specific
@@ -44,7 +50,7 @@ android.api = 34
 android.minapi = 21
 
 # (list) The Android archs to build for
-android.archs = armeabi-v7a, arm64-v8a
+android.archs =arm64-v8a
 
 # (list) Java/Gradle dependencies
 android.gradle_dependencies = com.google.zxing:core:3.5.2
