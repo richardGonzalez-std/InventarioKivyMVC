@@ -232,52 +232,100 @@
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# PANTALLA: InventoryScreen (Reutilizable)
+# PANTALLA: InventoryScreen (Lista de productos)
 # ═══════════════════════════════════════════════════════════════════════════════
 <InventoryScreen>:
     MDBoxLayout:
         orientation: "vertical"
 
+        # Barra superior minimalista
         MDTopAppBar:
             id: inventory_toolbar
             type: "small"
 
-            MDTopAppBarLeadingButtonContainer:
-                MDActionTopAppBarButton:
-                    icon: "menu"
-
             MDTopAppBarTitle:
-                text: root.name.capitalize() if root.name else "Inventario"
+                text: "Inventario"
                 halign: "center"
 
             MDTopAppBarTrailingButtonContainer:
                 MDActionTopAppBarButton:
-                    icon: "magnify"
-                MDActionTopAppBarButton:
-                    icon: "filter-variant"
+                    icon: "refresh"
+                    on_release: root.refrescar()
 
-        # Placeholder - será reemplazado con RecycleView
+        # Contenedor principal
         MDBoxLayout:
             orientation: "vertical"
-            padding: "20dp"
 
-            MDIcon:
-                icon: "package-variant"
-                font_size: "64sp"
-                pos_hint: {"center_x": 0.5}
-                theme_text_color: "Custom"
-                text_color: [0.7, 0.7, 0.7, 1]
+            # Spinner de carga
+            MDBoxLayout:
+                orientation: "vertical"
+                size_hint_y: None
+                height: "100dp" if root.is_loading else "0dp"
+                opacity: 1 if root.is_loading else 0
+                padding: "20dp"
 
-            MDLabel:
-                text: f"Sección: {root.name}"
-                halign: "center"
-                font_style: "Title"
-                role: "large"
+                MDCircularProgressIndicator:
+                    size_hint: None, None
+                    size: "48dp", "48dp"
+                    pos_hint: {"center_x": 0.5}
 
-            MDLabel:
-                text: "Lista de materiales próximamente"
-                halign: "center"
-                theme_text_color: "Secondary"
+                MDLabel:
+                    text: "Cargando productos..."
+                    halign: "center"
+                    theme_text_color: "Secondary"
+
+            # Mensaje de error
+            MDBoxLayout:
+                orientation: "vertical"
+                size_hint_y: None
+                height: "100dp" if root.error_message else "0dp"
+                opacity: 1 if root.error_message else 0
+                padding: "20dp"
+
+                MDIcon:
+                    icon: "alert-circle-outline"
+                    font_size: "48sp"
+                    pos_hint: {"center_x": 0.5}
+                    theme_text_color: "Custom"
+                    text_color: CORPOELEC_RED
+
+                MDLabel:
+                    text: root.error_message
+                    halign: "center"
+                    theme_text_color: "Error"
+
+            # Estado vacío
+            MDBoxLayout:
+                orientation: "vertical"
+                size_hint_y: None
+                height: "150dp" if (not root.is_loading and not root.error_message and len(root.productos) == 0) else "0dp"
+                opacity: 1 if (not root.is_loading and not root.error_message and len(root.productos) == 0) else 0
+                padding: "20dp"
+
+                MDIcon:
+                    icon: "package-variant"
+                    font_size: "64sp"
+                    pos_hint: {"center_x": 0.5}
+                    theme_text_color: "Custom"
+                    text_color: [0.7, 0.7, 0.7, 1]
+
+                MDLabel:
+                    text: "Sin productos"
+                    halign: "center"
+                    font_style: "Title"
+                    role: "medium"
+                    theme_text_color: "Secondary"
+
+                MDLabel:
+                    text: "Importa productos con el script"
+                    halign: "center"
+                    theme_text_color: "Hint"
+
+            # Lista de productos (scroll)
+            MDScrollView:
+
+                MDList:
+                    id: product_list
 
         # FAB para agregar
         MDAnchorLayout:
