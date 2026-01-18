@@ -70,7 +70,7 @@ CATEGORIA_MAP = {
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 SCRAPING_TARGETS = {
     "farmatodo": {
-        "url": "https://www.farmatodo.com.ve/buscar?q={query}",
+        "url": "https://www.farmatodo.com.ve/buscar?product={query}",
         "parser": "parse_farmatodo",
         "wait_selector": "div.vtex-search-result-3-x-galleryItem, article[class*='product']",
         "requires_js": True
