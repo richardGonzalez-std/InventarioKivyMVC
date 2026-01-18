@@ -78,7 +78,7 @@ SCRAPING_TARGETS = {
     "farmago": {
         "url": "https://www.farmago.com.ve/website/search?search={query}&order=name+asc",
         "parser": "parse_farmago",
-        "wait_selector": "div.product-card, div.o_wsale_product_grid_wrapper",
+        "wait_selector": "a.dropdown-item, div.o_search_result_item",
         "requires_js": True
     },
     "centroplaza": {
@@ -202,38 +202,64 @@ def parse_sambilonline(soup, limit):
 def parse_farmago(soup, limit):
     """Parsea el HTML de Farmago (Odoo)"""
     productos = []
-    items = soup.select('div.o_wsale_product_grid_wrapper, div.product-card, form.js_add_cart_variants')
+    # Buscar los enlaces de productos en el dropdown de búsqueda
+    items = soup.select('a.dropdown-item[href*="/shop/"]')
 
     for item in items:
         if limit and len(productos) >= limit:
             break
         try:
-            name_elem = item.select_one('h6, h5, .product-name, a[itemprop="name"], span.product-name')
-            price_elem = item.select_one('.product-price, span[itemprop="price"], .oe_currency_value')
-            img_elem = item.select_one('img')
-            link_elem = item.select_one('a[href*="/shop/"]')
-
-            if not name_elem:
+            # Nombre: concatenar spans dentro de div.h6
+            name_container = item.select_one('div.h6.fw-bold')
+            if not name_container:
                 continue
 
-            nombre = name_elem.get_text(strip=True)
+            # Obtener texto de todos los spans
+            nombre = name_container.get_text(strip=True)
 
+            # Precio: span.oe_currency_value
+            price_elem = item.select_one('span.oe_currency_value')
             precio = 0.0
             if price_elem:
                 precio_str = price_elem.get_text(strip=True)
-                precio_str = re.sub(r'[^\d,.]', '', precio_str).replace(',', '.')
+                # Formato venezolano: "471,60" -> 471.60
+                precio_str = precio_str.replace('.', '').replace(',', '.')
                 try:
                     precio = float(precio_str) if precio_str else 0.0
                 except ValueError:
                     precio = 0.0
 
-            imagen_url = img_elem.get('src', '') if img_elem else ''
-            product_id = link_elem.get('href', '').split('/')[-1] if link_elem else re.sub(r'\W+', '', nombre)[:15]
+            # Imagen
+            img_elem = item.select_one('img.o_image_64_contain')
+            imagen_url = ''
+            if img_elem:
+                src = img_elem.get('src', '')
+                if src.startswith('/'):
+                    imagen_url = f"https://www.farmago.com.ve{src}"
+                else:
+                    imagen_url = src
+
+            # Código de barras de la URL: /shop/7591206285641-pepito-mundo-marino-x-80-gr-pepsico-70336
+            href = item.get('href', '')
+            codigo_barras = ''
+            # Extraer el código de barras (primer número después de /shop/)
+            match = re.search(r'/shop/(\d{7,14})-', href)
+            if match:
+                codigo_barras = match.group(1)
+
+            if not codigo_barras:
+                codigo_barras = f"FAGO-{re.sub(r'[^a-zA-Z0-9]', '', nombre)[:15]}"
+
+            # Categoría del botón
+            categoria = "General"
+            cat_btn = item.select_one('button[onclick*="/shop/category/"]')
+            if cat_btn:
+                categoria = cat_btn.get_text(strip=True)
 
             producto = {
-                'codigo_barras': f"FAGO-{product_id[:20]}",
+                'codigo_barras': codigo_barras,
                 'nombre': nombre[:100],
-                'categoria': "Farmacia",
+                'categoria': categoria,
                 'cantidad': 0,
                 'unidad': 'unidades',
                 'ubicacion': 'Por asignar',
