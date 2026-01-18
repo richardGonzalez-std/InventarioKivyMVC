@@ -90,6 +90,8 @@ class CameraScreen(MDScreen):
         self.scan_event = None
         self.dialog = None
         self.current_producto = None
+        self._camera_init_attempts = 0
+        self._camera_ready = False
 
         # Inicializar repositorio
         if REPOSITORY_AVAILABLE:
@@ -97,32 +99,51 @@ class CameraScreen(MDScreen):
             self.repository.conectar()
         else:
             self.repository = None
-    
+
     def on_enter(self, *args):
         """Inicia la cámara al entrar."""
         print("✓ Entrando a CameraScreen...")
-        Clock.schedule_once(self.check_permissions_and_start_cam, 0)
-    
+        self._camera_init_attempts = 0
+        # Delay mayor para asegurar que el layout esté listo
+        Clock.schedule_once(self._init_camera_safe, 0.3)
+
+    def _init_camera_safe(self, dt):
+        """Intenta inicializar la cámara de forma segura con reintentos."""
+        self._camera_init_attempts += 1
+
+        # Verificar que el layout esté listo
+        if not hasattr(self, 'ids') or 'camera_container' not in self.ids:
+            if self._camera_init_attempts < 5:
+                print(f"⏳ Esperando layout (intento {self._camera_init_attempts})...")
+                Clock.schedule_once(self._init_camera_safe, 0.2)
+            else:
+                print("✗ Layout no disponible después de 5 intentos")
+                self._show_error_message("Error inicializando cámara")
+            return
+
+        # Layout listo, iniciar cámara
+        self.check_permissions_and_start_cam()
+
     def on_leave(self, *args):
         """Detiene la cámara al salir para liberar recursos."""
         print("✓ Saliendo de CameraScreen...")
         self.stop_scanning()
+        self._camera_ready = False
         if self.camera_widget:
-            self.camera_widget.play = False # Pausamos para ahorrar batería
-            if hasattr(self, 'ids') and 'camera_container' in self.ids:
-                self.ids.camera_container.remove_widget(self.camera_widget)
+            self.camera_widget.play = False  # Pausamos para ahorrar batería
+            # No remover el widget, solo pausar - esto evita problemas de reinicio
     
     def check_permissions_and_start_cam(self, *args):
         """Gestiona permisos e inicio de cámara."""
-        
+
         # 1. Permisos Android
         if platform == "android":
-            from android.permissions import check_permission, Permission # pyright: ignore
+            from android.permissions import check_permission, Permission  # pyright: ignore
             if not check_permission(Permission.CAMERA):
                 print("✗ Permiso de cámara denegado")
                 self._show_error_message("Se necesita permiso de cámara.")
                 return
-        
+
         # 2. Crear Widget (Solo si no existe)
         if not self.camera_widget:
             print("✓ Creando nueva instancia de cámara...")
@@ -130,7 +151,7 @@ class CameraScreen(MDScreen):
                 self.camera_widget = Camera(
                     resolution=(640, 480),
                     allow_stretch=True,
-                    play=True
+                    play=False  # Empezar pausada, activar después de añadir al layout
                 )
 
                 # --- CORRECCIÓN DE ROTACIÓN PARA ANDROID ---
@@ -155,25 +176,48 @@ class CameraScreen(MDScreen):
                 print(f"✗ Error al crear cámara: {e}")
                 self._show_error_message("Error al iniciar cámara.")
                 return
-        
-        # --- CORRECCIÓN 2: REINICIO ---
-        # Siempre aseguramos que play sea True, incluso si el widget ya existía.
-        # Esto soluciona el problema de la "imagen congelada".
-        self.camera_widget.play = True
-        
-        # 3. Configurar UI
+
+        # 3. Configurar UI (añadir widget al layout)
         self._setup_camera_ui()
+
+        # 4. Activar cámara DESPUÉS de añadir al layout (con pequeño delay)
+        Clock.schedule_once(self._activate_camera, 0.1)
     
     def _setup_camera_ui(self):
+        """Configura la UI de la cámara."""
         if 'camera_container' not in self.ids:
+            print("✗ camera_container no encontrado")
             return
-        
-        self.ids.camera_container.clear_widgets()
-        # Añadir el widget al layout hace que se recalcule su tamaño correctamente
-        self.ids.camera_container.add_widget(self.camera_widget)
-        
+
+        container = self.ids.camera_container
+
+        # Solo añadir si no está ya en el container
+        if self.camera_widget.parent != container:
+            container.clear_widgets()
+            container.add_widget(self.camera_widget)
+            print("✓ Cámara añadida al layout")
+
         if 'controls_container' in self.ids:
             self._create_controls()
+
+    def _activate_camera(self, dt):
+        """Activa la cámara después de que el layout esté listo."""
+        if not self.camera_widget:
+            return
+
+        # Verificar que el widget tenga tamaño válido
+        if self.camera_widget.width <= 0 or self.camera_widget.height <= 0:
+            print("⏳ Esperando tamaño de cámara...")
+            Clock.schedule_once(self._activate_camera, 0.1)
+            return
+
+        # Activar cámara
+        self.camera_widget.play = True
+        self._camera_ready = True
+        print(f"✓ Cámara activada ({self.camera_widget.width}x{self.camera_widget.height})")
+
+        if 'status_label' in self.ids:
+            self.ids.status_label.text = "Apunte la cámara al código de barras"
             
     # ... (El resto de tus métodos: _create_controls, toggle_scanning, etc. se mantienen igual) ...
     # Copia aquí el resto de métodos (_create_controls, toggle_scanning, start_scanning, 
