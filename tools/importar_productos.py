@@ -112,7 +112,7 @@ def get_selenium_driver():
         from webdriver_manager.chrome import ChromeDriverManager
 
         options = Options()
-        options.add_argument('--headless')
+        # options.add_argument('--headless')  # Comentado para debugging - descomentar en producción
         options.add_argument('--no-sandbox')
         options.add_argument('--disable-dev-shm-usage')
         options.add_argument('--disable-gpu')
