@@ -229,7 +229,7 @@ def descargar_productos_scraping(target, query, limit=None):
         print(f"✗ Error al acceder a la URL: {e}")
         return []
 
-    soup = BeautifulSoup(response.content, 'lxml')
+    soup = BeautifulSoup(response.content, 'html.parser')
     productos = parser_func(soup, limit)
 
     print(f"\n✓ Encontrados: {len(productos)} productos válidos")
