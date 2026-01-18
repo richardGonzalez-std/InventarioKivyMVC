@@ -289,15 +289,20 @@ class CameraScreen(MDScreen):
             width, height = int(texture.width), int(texture.height)
             pixels = texture.pixels
 
-            # Convertir pixels a array de enteros RGB
+            # Convertir pixels a array de enteros RGB (signed int para Java)
             pixel_array = [0] * (width * height)
             for i in range(width * height):
                 idx = i * 4  # RGBA
                 r = pixels[idx]
                 g = pixels[idx + 1]
                 b = pixels[idx + 2]
-                # Convertir a formato ARGB int
-                pixel_array[i] = (255 << 24) | (r << 16) | (g << 8) | b
+                # Convertir a formato ARGB como signed int (Java usa signed int)
+                # 0xFF?????? en unsigned es negativo en signed 32-bit
+                argb = (255 << 24) | (r << 16) | (g << 8) | b
+                # Convertir a signed: si >= 2^31, restar 2^32
+                if argb >= 0x80000000:
+                    argb = argb - 0x100000000
+                pixel_array[i] = argb
 
             # Crear LuminanceSource y BinaryBitmap
             source = _RGBLuminanceSource(width, height, pixel_array)
