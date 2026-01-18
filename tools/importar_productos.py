@@ -69,10 +69,10 @@ CATEGORIA_MAP = {
 # --- Web Scraping ---
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 SCRAPING_TARGETS = {
-    "farmatodo": {
-        "url": "https://www.farmatodo.com.ve/buscar?product={query}",
-        "parser": "parse_farmatodo",
-        "wait_selector": "div.product-card__content, p.product-card__title",
+    "sambilonline": {
+        "url": "https://www.sambilonline.com/despensa.html?q={query}",
+        "parser": "parse_sambilonline",
+        "wait_selector": "li.ais-Hits-item, div.result-wrapper",
         "requires_js": True
     },
     "farmago": {
@@ -130,74 +130,66 @@ def get_selenium_driver():
 # PARSERS DE SCRAPING
 # ─────────────────────────────────────────────────────────
 
-def parse_farmatodo(soup, limit):
-    """Parsea el HTML de Farmatodo (Angular)"""
+def parse_sambilonline(soup, limit):
+    """Parsea el HTML de Sambil Online (Magento + Algolia)"""
     productos = []
-    # Selectores para Farmatodo Angular
-    items = soup.select('div.product-card__content')
+    # Selectores para Sambil Online
+    items = soup.select('li.ais-Hits-item')
 
     for item in items:
         if limit and len(productos) >= limit:
             break
 
         try:
-            # Selectores Farmatodo
-            name_elem = item.select_one('p.product-card__title')
-            brand_elem = item.select_one('p.product-card__brand')
-            price_elem = item.select_one('span.product-card__price-value')
-            link_elem = item.select_one('a.product-card__info-link')
-            img_elem = item.select_one('img.product-image__image')
+            # Selectores Sambil Online con schema.org
+            name_elem = item.select_one('h3.result-title, [itemprop="name"]')
+            price_meta = item.select_one('meta[itemprop="price"]')
+            img_elem = item.select_one('img[itemprop="image"]')
+            url_meta = item.select_one('meta[itemprop="url"]')
 
             if not name_elem:
                 continue
 
             nombre = name_elem.get_text(strip=True)
-            marca = brand_elem.get_text(strip=True) if brand_elem else "Desconocida"
 
+            # Precio desde meta tag (ya es número limpio en USD)
             precio = 0.0
-            if price_elem:
-                precio_str = price_elem.get_text(strip=True)
-                # Formato: "Bs.195.93" -> 195.93
-                precio_str = re.sub(r'[^\d,.]', '', precio_str)
-                # Manejar formato venezolano (punto como separador de miles, coma decimal)
-                if ',' in precio_str and '.' in precio_str:
-                    precio_str = precio_str.replace('.', '').replace(',', '.')
-                elif ',' in precio_str:
-                    precio_str = precio_str.replace(',', '.')
+            if price_meta:
                 try:
-                    precio = float(precio_str) if precio_str else 0.0
+                    precio = float(price_meta.get('content', '0'))
                 except ValueError:
                     precio = 0.0
 
-            imagen_url = ''
-            if img_elem:
-                imagen_url = img_elem.get('src') or img_elem.get('data-src', '')
+            imagen_url = img_elem.get('src', '') if img_elem else ''
 
-            # Extraer ID del producto del href: /producto/112460440-acetaminofen-650mg-10-tabletas
-            product_id = ''
-            if link_elem:
-                href = link_elem.get('href', '')
-                # Extraer el número del inicio: 112460440
-                match = re.search(r'/producto/(\d+)', href)
+            # Extraer código de barras de la URL: s1-v199791-7591002200046-229.html
+            codigo_barras = ''
+            if url_meta:
+                url = url_meta.get('content', '')
+                # Buscar patrón de 13 dígitos (código de barras EAN-13)
+                match = re.search(r'-(\d{13})-', url)
                 if match:
-                    product_id = match.group(1)
+                    codigo_barras = match.group(1)
                 else:
-                    product_id = href.split('/')[-1][:20]
+                    # Intentar extraer cualquier número largo
+                    match = re.search(r'-(\d{7,14})-', url)
+                    if match:
+                        codigo_barras = match.group(1)
 
-            if not product_id:
-                product_id = re.sub(r'\W+', '', nombre)[:15]
+            if not codigo_barras:
+                codigo_barras = f"SAMBIL-{re.sub(r'[^a-zA-Z0-9]', '', nombre)[:15]}"
 
             producto = {
-                'codigo_barras': f"FTODO-{product_id}",
+                'codigo_barras': codigo_barras,
                 'nombre': nombre[:100],
-                'categoria': "Farmacia",
+                'categoria': "General",
                 'cantidad': 0,
                 'unidad': 'unidades',
                 'ubicacion': 'Por asignar',
-                'marca': marca,
+                'marca': "Desconocida",
                 'imagen_url': imagen_url,
                 'precio': precio,
-                'fuente': 'Farmatodo'
+                'fuente': 'Sambil Online'
             }
             productos.append(producto)
         except (AttributeError, ValueError, TypeError) as e:
