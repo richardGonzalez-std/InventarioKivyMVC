@@ -87,14 +87,8 @@ SCRAPING_TARGETS = {
         "wait_selector": "li.product-item, div.product-item-info",
         "requires_js": True
     },
-    "farmahorro": {
-        "url": "https://www.farmahorro.com/search?q={query}",
-        "parser": "parse_farmahorro",
-        "wait_selector": "div.product-card, div.product-item",
-        "requires_js": True
-    },
     "locatel": {
-        "url": "https://www.locatelvenezuela.com/{query}?_q={query}&map=ft",
+        "url": "https://www.locatel.com.ve/{query}?_q={query}",
         "parser": "parse_locatel",
         "wait_selector": "div.vtex-search-result-3-x-galleryItem, article[class*='product']",
         "requires_js": True
@@ -317,55 +311,6 @@ def parse_centroplaza(soup, limit):
                 'imagen_url': imagen_url,
                 'precio': precio,
                 'fuente': 'CentroPlaza'
-            }
-            productos.append(producto)
-        except (AttributeError, ValueError, TypeError) as e:
-            print(f"   ! Warning: Saltando producto: {e}")
-            continue
-    return productos
-
-
-def parse_farmahorro(soup, limit):
-    """Parsea el HTML de Farmahorro"""
-    productos = []
-    items = soup.select('div.product-card, div.product-item, article.product')
-
-    for item in items:
-        if limit and len(productos) >= limit:
-            break
-        try:
-            name_elem = item.select_one('h2, h3, .product-name, .product-title, a[class*="product"]')
-            price_elem = item.select_one('.price, .product-price, span[class*="price"]')
-            img_elem = item.select_one('img')
-
-            if not name_elem:
-                continue
-
-            nombre = name_elem.get_text(strip=True)
-
-            precio = 0.0
-            if price_elem:
-                precio_str = price_elem.get_text(strip=True)
-                precio_str = re.sub(r'[^\d,.]', '', precio_str).replace(',', '.')
-                try:
-                    precio = float(precio_str) if precio_str else 0.0
-                except ValueError:
-                    precio = 0.0
-
-            imagen_url = img_elem.get('src', '') if img_elem else ''
-            product_id = re.sub(r'\W+', '', nombre).lower()[:20]
-
-            producto = {
-                'codigo_barras': f"FAHO-{product_id}",
-                'nombre': nombre[:100],
-                'categoria': "Farmacia",
-                'cantidad': 0,
-                'unidad': 'unidades',
-                'ubicacion': 'Por asignar',
-                'marca': "Desconocida",
-                'imagen_url': imagen_url,
-                'precio': precio,
-                'fuente': 'Farmahorro'
             }
             productos.append(producto)
         except (AttributeError, ValueError, TypeError) as e:
