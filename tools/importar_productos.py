@@ -72,7 +72,7 @@ SCRAPING_TARGETS = {
     "farmatodo": {
         "url": "https://www.farmatodo.com.ve/buscar?product={query}",
         "parser": "parse_farmatodo",
-        "wait_selector": "div.vtex-search-result-3-x-galleryItem, article[class*='product']",
+        "wait_selector": "div.product-card__content, p.product-card__title",
         "requires_js": True
     },
     "farmago": {
@@ -131,47 +131,70 @@ def get_selenium_driver():
 # ─────────────────────────────────────────────────────────
 
 def parse_farmatodo(soup, limit):
-    """Parsea el HTML de Farmatodo (VTEX)"""
+    """Parsea el HTML de Farmatodo (Angular)"""
     productos = []
-    # Selectores actualizados para VTEX
-    items = soup.select('div.vtex-search-result-3-x-galleryItem, article.vtex-product-summary-2-x-element')
+    # Selectores para Farmatodo Angular
+    items = soup.select('div.product-card__content')
 
     for item in items:
         if limit and len(productos) >= limit:
             break
 
         try:
-            # Selectores VTEX
-            name_elem = item.select_one('span.vtex-product-summary-2-x-productBrand, h3.vtex-product-summary-2-x-productNameContainer')
-            price_elem = item.select_one('span.vtex-product-price-1-x-sellingPrice, span.vtex-product-price-1-x-currencyContainer')
-            img_elem = item.select_one('img.vtex-product-summary-2-x-image')
-            link_elem = item.select_one('a.vtex-product-summary-2-x-clearLink')
+            # Selectores Farmatodo
+            name_elem = item.select_one('p.product-card__title')
+            brand_elem = item.select_one('p.product-card__brand')
+            price_elem = item.select_one('span.product-card__price-value')
+            link_elem = item.select_one('a.product-card__info-link')
+            img_elem = item.select_one('img.product-image__image')
 
             if not name_elem:
                 continue
 
             nombre = name_elem.get_text(strip=True)
+            marca = brand_elem.get_text(strip=True) if brand_elem else "Desconocida"
 
             precio = 0.0
             if price_elem:
                 precio_str = price_elem.get_text(strip=True)
-                precio_str = re.sub(r'[^\d,.]', '', precio_str).replace(',', '.')
+                # Formato: "Bs.195.93" -> 195.93
+                precio_str = re.sub(r'[^\d,.]', '', precio_str)
+                # Manejar formato venezolano (punto como separador de miles, coma decimal)
+                if ',' in precio_str and '.' in precio_str:
+                    precio_str = precio_str.replace('.', '').replace(',', '.')
+                elif ',' in precio_str:
+                    precio_str = precio_str.replace(',', '.')
                 try:
                     precio = float(precio_str) if precio_str else 0.0
                 except ValueError:
                     precio = 0.0
 
-            imagen_url = img_elem.get('src', '') if img_elem else ''
-            product_id = link_elem.get('href', '').split('/')[-1] if link_elem else re.sub(r'\W+', '', nombre)[:15]
+            imagen_url = ''
+            if img_elem:
+                imagen_url = img_elem.get('src') or img_elem.get('data-src', '')
+
+            # Extraer ID del producto del href: /producto/112460440-acetaminofen-650mg-10-tabletas
+            product_id = ''
+            if link_elem:
+                href = link_elem.get('href', '')
+                # Extraer el número del inicio: 112460440
+                match = re.search(r'/producto/(\d+)', href)
+                if match:
+                    product_id = match.group(1)
+                else:
+                    product_id = href.split('/')[-1][:20]
+
+            if not product_id:
+                product_id = re.sub(r'\W+', '', nombre)[:15]
 
             producto = {
-                'codigo_barras': f"FTODO-{product_id[:20]}",
+                'codigo_barras': f"FTODO-{product_id}",
                 'nombre': nombre[:100],
                 'categoria': "Farmacia",
                 'cantidad': 0,
                 'unidad': 'unidades',
                 'ubicacion': 'Por asignar',
-                'marca': "Desconocida",
+                'marca': marca,
                 'imagen_url': imagen_url,
                 'precio': precio,
                 'fuente': 'Farmatodo'
