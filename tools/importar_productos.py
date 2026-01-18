@@ -30,6 +30,19 @@ import os
 import re
 from bs4 import BeautifulSoup
 
+# Selenium para sitios con JavaScript
+SELENIUM_AVAILABLE = False
+try:
+    from selenium import webdriver
+    from selenium.webdriver.chrome.options import Options
+    from selenium.webdriver.chrome.service import Service
+    from selenium.webdriver.common.by import By
+    from selenium.webdriver.support.ui import WebDriverWait
+    from selenium.webdriver.support import expected_conditions as EC
+    SELENIUM_AVAILABLE = True
+except ImportError:
+    pass
+
 # Agregar path del proyecto
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -54,52 +67,106 @@ CATEGORIA_MAP = {
 }
 
 # --- Web Scraping ---
-USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 SCRAPING_TARGETS = {
     "farmatodo": {
-        "url": "https://www.farmatodo.com.ve/buscar?qa={query}",
-        "parser": "parse_farmatodo"
+        "url": "https://www.farmatodo.com.ve/buscar?q={query}",
+        "parser": "parse_farmatodo",
+        "wait_selector": "div.vtex-search-result-3-x-galleryItem, article[class*='product']",
+        "requires_js": True
     },
     "farmago": {
-        "url": "https://farmago.com.ve/?s={query}&post_type=product",
-        "parser": "parse_farmago"
+        "url": "https://www.farmago.com.ve/website/search?search={query}&order=name+asc",
+        "parser": "parse_farmago",
+        "wait_selector": "div.product-card, div.o_wsale_product_grid_wrapper",
+        "requires_js": True
     },
-    "sambilonline": {
-        "url": "https://www.sambilonline.com/search/?q={query}",
-        "parser": "parse_sambil"
+    "centroplaza": {
+        "url": "https://centroplaza.elplazas.com/catalogsearch/result/?q={query}",
+        "parser": "parse_centroplaza",
+        "wait_selector": "li.product-item, div.product-item-info",
+        "requires_js": True
+    },
+    "farmahorro": {
+        "url": "https://www.farmahorro.com/search?q={query}",
+        "parser": "parse_farmahorro",
+        "wait_selector": "div.product-card, div.product-item",
+        "requires_js": True
+    },
+    "locatel": {
+        "url": "https://www.locatelvenezuela.com/{query}?_q={query}&map=ft",
+        "parser": "parse_locatel",
+        "wait_selector": "div.vtex-search-result-3-x-galleryItem, article[class*='product']",
+        "requires_js": True
     }
 }
+
+
+def get_selenium_driver():
+    """Crea un driver de Selenium con Chrome headless."""
+    if not SELENIUM_AVAILABLE:
+        print("✗ Selenium no está instalado. Ejecuta: pip install selenium webdriver-manager")
+        return None
+
+    try:
+        from webdriver_manager.chrome import ChromeDriverManager
+
+        options = Options()
+        options.add_argument('--headless')
+        options.add_argument('--no-sandbox')
+        options.add_argument('--disable-dev-shm-usage')
+        options.add_argument('--disable-gpu')
+        options.add_argument(f'--user-agent={USER_AGENT}')
+        options.add_argument('--window-size=1920,1080')
+
+        service = Service(ChromeDriverManager().install())
+        driver = webdriver.Chrome(service=service, options=options)
+        return driver
+    except Exception as e:
+        print(f"✗ Error creando driver Selenium: {e}")
+        return None
 
 # ─────────────────────────────────────────────────────────
 # PARSERS DE SCRAPING
 # ─────────────────────────────────────────────────────────
 
 def parse_farmatodo(soup, limit):
-    """Parsea el HTML de Farmatodo"""
+    """Parsea el HTML de Farmatodo (VTEX)"""
     productos = []
-    items = soup.select('div.product-tile-container')
+    # Selectores actualizados para VTEX
+    items = soup.select('div.vtex-search-result-3-x-galleryItem, article.vtex-product-summary-2-x-element')
 
     for item in items:
         if limit and len(productos) >= limit:
             break
 
         try:
-            name_elem = item.select_one('a.link')
-            price_elem = item.select_one('span.price')
-            img_elem = item.select_one('img.tile-image')
-            
-            if not all([name_elem, price_elem, img_elem]):
+            # Selectores VTEX
+            name_elem = item.select_one('span.vtex-product-summary-2-x-productBrand, h3.vtex-product-summary-2-x-productNameContainer')
+            price_elem = item.select_one('span.vtex-product-price-1-x-sellingPrice, span.vtex-product-price-1-x-currencyContainer')
+            img_elem = item.select_one('img.vtex-product-summary-2-x-image')
+            link_elem = item.select_one('a.vtex-product-summary-2-x-clearLink')
+
+            if not name_elem:
                 continue
 
             nombre = name_elem.get_text(strip=True)
-            precio_str = price_elem.get_text(strip=True).replace('Bs.', '').replace('.', '').replace(',', '.').strip()
-            precio = float(re.sub(r'[^\d.]', '', precio_str))
-            imagen_url = img_elem.get('src', '')
-            product_id = name_elem.get('href', '').split('/')[-1]
+
+            precio = 0.0
+            if price_elem:
+                precio_str = price_elem.get_text(strip=True)
+                precio_str = re.sub(r'[^\d,.]', '', precio_str).replace(',', '.')
+                try:
+                    precio = float(precio_str) if precio_str else 0.0
+                except ValueError:
+                    precio = 0.0
+
+            imagen_url = img_elem.get('src', '') if img_elem else ''
+            product_id = link_elem.get('href', '').split('/')[-1] if link_elem else re.sub(r'\W+', '', nombre)[:15]
 
             producto = {
-                'codigo_barras': f"FARM-{product_id}",
-                'nombre': nombre,
+                'codigo_barras': f"FTODO-{product_id[:20]}",
+                'nombre': nombre[:100],
                 'categoria': "Farmacia",
                 'cantidad': 0,
                 'unidad': 'unidades',
@@ -111,38 +178,46 @@ def parse_farmatodo(soup, limit):
             }
             productos.append(producto)
         except (AttributeError, ValueError, TypeError) as e:
-            print(f"   ! Warning: Saltando producto por error de parseo: {e}")
+            print(f"   ! Warning: Saltando producto: {e}")
             continue
-            
+
     return productos
 
+
 def parse_farmago(soup, limit):
-    """Parsea el HTML de Farmago"""
+    """Parsea el HTML de Farmago (Odoo)"""
     productos = []
-    items = soup.select('div.product-wrapper')
+    items = soup.select('div.o_wsale_product_grid_wrapper, div.product-card, form.js_add_cart_variants')
 
     for item in items:
         if limit and len(productos) >= limit:
             break
         try:
-            name_elem = item.select_one('h2.woocommerce-loop-product__title')
-            price_elem = item.select_one('span.price')
-            img_elem = item.select_one('img.attachment-woocommerce_thumbnail')
+            name_elem = item.select_one('h6, h5, .product-name, a[itemprop="name"], span.product-name')
+            price_elem = item.select_one('.product-price, span[itemprop="price"], .oe_currency_value')
+            img_elem = item.select_one('img')
+            link_elem = item.select_one('a[href*="/shop/"]')
 
-            if not all([name_elem, price_elem, img_elem]):
+            if not name_elem:
                 continue
 
             nombre = name_elem.get_text(strip=True)
-            # El precio puede tener un rango, tomamos el primero
-            precio_str = price_elem.find('bdi').get_text(strip=True).replace('$', '').strip()
-            precio = float(re.sub(r'[^\d.]', '', precio_str))
-            imagen_url = img_elem.get('src', '')
-            # No hay ID claro, usamos el nombre
-            product_id = re.sub(r'\W+', '', nombre).lower()[:20]
+
+            precio = 0.0
+            if price_elem:
+                precio_str = price_elem.get_text(strip=True)
+                precio_str = re.sub(r'[^\d,.]', '', precio_str).replace(',', '.')
+                try:
+                    precio = float(precio_str) if precio_str else 0.0
+                except ValueError:
+                    precio = 0.0
+
+            imagen_url = img_elem.get('src', '') if img_elem else ''
+            product_id = link_elem.get('href', '').split('/')[-1] if link_elem else re.sub(r'\W+', '', nombre)[:15]
 
             producto = {
-                'codigo_barras': f"FAGO-{product_id}",
-                'nombre': nombre,
+                'codigo_barras': f"FAGO-{product_id[:20]}",
+                'nombre': nombre[:100],
                 'categoria': "Farmacia",
                 'cantidad': 0,
                 'unidad': 'unidades',
@@ -154,36 +229,45 @@ def parse_farmago(soup, limit):
             }
             productos.append(producto)
         except (AttributeError, ValueError, TypeError) as e:
-            print(f"   ! Warning: Saltando producto por error de parseo: {e}")
+            print(f"   ! Warning: Saltando producto: {e}")
             continue
     return productos
 
 
-def parse_sambil(soup, limit):
-    """Parsea el HTML de Sambil Online"""
+def parse_centroplaza(soup, limit):
+    """Parsea el HTML de Centro Plaza (Magento)"""
     productos = []
-    items = soup.select('div.product-item-info')
+    items = soup.select('li.product-item, div.product-item-info, div.product-item')
 
     for item in items:
         if limit and len(productos) >= limit:
             break
         try:
-            name_elem = item.select_one('a.product-item-link')
-            price_elem = item.select_one('span.price')
-            img_elem = item.select_one('img.product-image-photo')
-            
-            if not all([name_elem, price_elem, img_elem]):
+            name_elem = item.select_one('a.product-item-link, strong.product-item-name, h2.product-name')
+            price_elem = item.select_one('span.price, span[data-price-type="finalPrice"]')
+            img_elem = item.select_one('img.product-image-photo, img.photo')
+            link_elem = item.select_one('a.product-item-link, a[href*="/product/"]')
+
+            if not name_elem:
                 continue
 
             nombre = name_elem.get_text(strip=True)
-            precio_str = price_elem.get_text(strip=True).replace('$', '').strip()
-            precio = float(re.sub(r'[^\d.]', '', precio_str))
-            imagen_url = img_elem.get('src', '')
-            product_id = name_elem.get('href', '').split('/')[-1].replace('.html', '')
+
+            precio = 0.0
+            if price_elem:
+                precio_str = price_elem.get_text(strip=True)
+                precio_str = re.sub(r'[^\d,.]', '', precio_str).replace(',', '.')
+                try:
+                    precio = float(precio_str) if precio_str else 0.0
+                except ValueError:
+                    precio = 0.0
+
+            imagen_url = img_elem.get('src', '') if img_elem else ''
+            product_id = link_elem.get('href', '').split('/')[-1].replace('.html', '') if link_elem else re.sub(r'\W+', '', nombre)[:15]
 
             producto = {
-                'codigo_barras': f"SAM-{product_id}",
-                'nombre': nombre,
+                'codigo_barras': f"CPLAZA-{product_id[:20]}",
+                'nombre': nombre[:100],
                 'categoria': "Tienda",
                 'cantidad': 0,
                 'unidad': 'unidades',
@@ -191,11 +275,110 @@ def parse_sambil(soup, limit):
                 'marca': "Desconocida",
                 'imagen_url': imagen_url,
                 'precio': precio,
-                'fuente': 'Sambil Online'
+                'fuente': 'CentroPlaza'
             }
             productos.append(producto)
         except (AttributeError, ValueError, TypeError) as e:
-            print(f"   ! Warning: Saltando producto por error de parseo: {e}")
+            print(f"   ! Warning: Saltando producto: {e}")
+            continue
+    return productos
+
+
+def parse_farmahorro(soup, limit):
+    """Parsea el HTML de Farmahorro"""
+    productos = []
+    items = soup.select('div.product-card, div.product-item, article.product')
+
+    for item in items:
+        if limit and len(productos) >= limit:
+            break
+        try:
+            name_elem = item.select_one('h2, h3, .product-name, .product-title, a[class*="product"]')
+            price_elem = item.select_one('.price, .product-price, span[class*="price"]')
+            img_elem = item.select_one('img')
+
+            if not name_elem:
+                continue
+
+            nombre = name_elem.get_text(strip=True)
+
+            precio = 0.0
+            if price_elem:
+                precio_str = price_elem.get_text(strip=True)
+                precio_str = re.sub(r'[^\d,.]', '', precio_str).replace(',', '.')
+                try:
+                    precio = float(precio_str) if precio_str else 0.0
+                except ValueError:
+                    precio = 0.0
+
+            imagen_url = img_elem.get('src', '') if img_elem else ''
+            product_id = re.sub(r'\W+', '', nombre).lower()[:20]
+
+            producto = {
+                'codigo_barras': f"FAHO-{product_id}",
+                'nombre': nombre[:100],
+                'categoria': "Farmacia",
+                'cantidad': 0,
+                'unidad': 'unidades',
+                'ubicacion': 'Por asignar',
+                'marca': "Desconocida",
+                'imagen_url': imagen_url,
+                'precio': precio,
+                'fuente': 'Farmahorro'
+            }
+            productos.append(producto)
+        except (AttributeError, ValueError, TypeError) as e:
+            print(f"   ! Warning: Saltando producto: {e}")
+            continue
+    return productos
+
+
+def parse_locatel(soup, limit):
+    """Parsea el HTML de Locatel (VTEX)"""
+    productos = []
+    items = soup.select('div.vtex-search-result-3-x-galleryItem, article.vtex-product-summary-2-x-element, div.vtex-product-summary-2-x-container')
+
+    for item in items:
+        if limit and len(productos) >= limit:
+            break
+        try:
+            name_elem = item.select_one('span.vtex-product-summary-2-x-productBrand, h3, .vtex-product-summary-2-x-productNameContainer')
+            price_elem = item.select_one('span.vtex-product-price-1-x-sellingPrice, span[class*="sellingPrice"], span[class*="currencyContainer"]')
+            img_elem = item.select_one('img.vtex-product-summary-2-x-image, img[class*="productImage"]')
+            link_elem = item.select_one('a[class*="clearLink"], a[href*="/p"]')
+
+            if not name_elem:
+                continue
+
+            nombre = name_elem.get_text(strip=True)
+
+            precio = 0.0
+            if price_elem:
+                precio_str = price_elem.get_text(strip=True)
+                precio_str = re.sub(r'[^\d,.]', '', precio_str).replace(',', '.')
+                try:
+                    precio = float(precio_str) if precio_str else 0.0
+                except ValueError:
+                    precio = 0.0
+
+            imagen_url = img_elem.get('src', '') if img_elem else ''
+            product_id = link_elem.get('href', '').split('/')[-1].replace('/p', '') if link_elem else re.sub(r'\W+', '', nombre)[:15]
+
+            producto = {
+                'codigo_barras': f"LOC-{product_id[:20]}",
+                'nombre': nombre[:100],
+                'categoria': "Farmacia/Tienda",
+                'cantidad': 0,
+                'unidad': 'unidades',
+                'ubicacion': 'Por asignar',
+                'marca': "Desconocida",
+                'imagen_url': imagen_url,
+                'precio': precio,
+                'fuente': 'Locatel'
+            }
+            productos.append(producto)
+        except (AttributeError, ValueError, TypeError) as e:
+            print(f"   ! Warning: Saltando producto: {e}")
             continue
 
     return productos
@@ -208,28 +391,78 @@ def parse_sambil(soup, limit):
 def descargar_productos_scraping(target, query, limit=None):
     """
     Descarga productos desde un sitio web usando scraping.
+    Usa Selenium para sitios que requieren JavaScript.
     """
     if target not in SCRAPING_TARGETS:
         print(f"✗ Error: El target de scraping '{target}' no es válido.")
+        print(f"   Targets disponibles: {', '.join(SCRAPING_TARGETS.keys())}")
         return []
 
     config = SCRAPING_TARGETS[target]
     url = config['url'].format(query=requests.utils.quote(query))
     parser_func = globals()[config['parser']]
+    requires_js = config.get('requires_js', False)
+    wait_selector = config.get('wait_selector', 'body')
 
     print(f"📥 Scrapeando '{query}' desde {target}...")
     print(f"   URL: {url}")
+    print(f"   Método: {'Selenium (JavaScript)' if requires_js else 'Requests (HTML estático)'}")
     print(f"   Límite: {limit or 'Sin límite'}")
 
-    headers = {'User-Agent': USER_AGENT}
-    try:
-        response = requests.get(url, headers=headers, timeout=30)
-        response.raise_for_status()
-    except requests.RequestException as e:
-        print(f"✗ Error al acceder a la URL: {e}")
+    html_content = None
+
+    if requires_js:
+        # Usar Selenium para sitios con JavaScript
+        if not SELENIUM_AVAILABLE:
+            print("✗ Este sitio requiere Selenium. Instálalo con:")
+            print("   pip install selenium webdriver-manager")
+            return []
+
+        driver = get_selenium_driver()
+        if not driver:
+            return []
+
+        try:
+            print("   Cargando página con Selenium...")
+            driver.get(url)
+
+            # Esperar a que carguen los productos
+            try:
+                WebDriverWait(driver, 15).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, wait_selector))
+                )
+                print("   ✓ Productos cargados")
+            except Exception:
+                print("   ! Timeout esperando productos, continuando...")
+
+            # Scroll para cargar más productos (lazy loading)
+            for _ in range(3):
+                driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+                time.sleep(1)
+
+            html_content = driver.page_source
+
+        except Exception as e:
+            print(f"✗ Error Selenium: {e}")
+            return []
+        finally:
+            driver.quit()
+    else:
+        # Usar requests para sitios estáticos
+        headers = {'User-Agent': USER_AGENT}
+        try:
+            response = requests.get(url, headers=headers, timeout=30)
+            response.raise_for_status()
+            html_content = response.text
+        except requests.RequestException as e:
+            print(f"✗ Error al acceder a la URL: {e}")
+            return []
+
+    if not html_content:
+        print("✗ No se pudo obtener el contenido HTML")
         return []
 
-    soup = BeautifulSoup(response.content, 'html.parser')
+    soup = BeautifulSoup(html_content, 'html.parser')
     productos = parser_func(soup, limit)
 
     print(f"\n✓ Encontrados: {len(productos)} productos válidos")
@@ -395,12 +628,29 @@ def subir_a_firebase(productos, dry_run=False):
 def main():
     """Función principal."""
     import argparse
-    parser = argparse.ArgumentParser(description='Importador de Productos para SIAM')
+    parser = argparse.ArgumentParser(
+        description='Importador de Productos para SIAM',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Ejemplos:
+  # Importar desde Open Food Facts (API oficial)
+  python importar_productos.py --source openfoodfacts --limit 50 --dry-run
+
+  # Importar desde Farmatodo (requiere Selenium)
+  python importar_productos.py --source farmatodo --query "acetaminofen" --limit 10
+
+  # Importar desde Locatel
+  python importar_productos.py --source locatel --query "vitaminas" --limit 10
+
+Requisitos para scraping:
+  pip install selenium webdriver-manager
+        """
+    )
     parser.add_argument('--source', type=str, default='openfoodfacts',
                         choices=['openfoodfacts'] + list(SCRAPING_TARGETS.keys()),
-                        help='Fuente de los datos')
+                        help='Fuente de los datos (default: openfoodfacts)')
     parser.add_argument('--query', type=str, default=None,
-                        help='Término de búsqueda para scraping')
+                        help='Término de búsqueda (requerido para scraping)')
     parser.add_argument('--limit', type=int, default=None,
                         help='Límite de productos a importar')
     parser.add_argument('--dry-run', action='store_true',
