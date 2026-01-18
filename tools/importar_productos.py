@@ -666,6 +666,95 @@ def subir_a_firebase(productos, dry_run=False):
     return subidos
 
 
+# Consultas comunes para importación masiva
+QUERIES_COMUNES = [
+    "arroz", "harina", "aceite", "azucar", "pasta", "leche",
+    "cafe", "atun", "sardina", "mayonesa", "salsa", "jabon",
+    "shampoo", "detergente", "papel", "cereal", "galletas",
+    "jugo", "refresco", "agua", "pan", "queso", "mantequilla"
+]
+
+
+def importar_todo(limit_por_fuente=50, limit_por_query=10, dry_run=False):
+    """
+    Importa productos de todas las fuentes disponibles.
+
+    Args:
+        limit_por_fuente: Límite de productos de Open Food Facts
+        limit_por_query: Límite de productos por query en scraping
+        dry_run: Si es True, no sube a Firebase
+
+    Returns:
+        Número total de productos subidos
+    """
+    todos_productos = {}  # Usar dict para evitar duplicados por código de barras
+
+    print("=" * 60)
+    print("SIAM - Importación Masiva de Productos")
+    print("=" * 60)
+    print()
+
+    # 1. Open Food Facts (API)
+    print("📦 [1/2] Importando desde Open Food Facts...")
+    print("-" * 40)
+    off_productos = descargar_productos_venezuela(limit=limit_por_fuente)
+    for p in off_productos:
+        todos_productos[p['codigo_barras']] = p
+    print(f"   ✓ {len(off_productos)} productos de Open Food Facts")
+    print()
+
+    # 2. Scraping de todas las fuentes
+    print(f"🌐 [2/2] Scrapeando {len(SCRAPING_TARGETS)} sitios...")
+    print("-" * 40)
+
+    for source_name in SCRAPING_TARGETS.keys():
+        print(f"\n   📍 {source_name.upper()}")
+        source_count = 0
+
+        for query in QUERIES_COMUNES[:5]:  # Limitar a 5 queries por sitio para no sobrecargar
+            try:
+                productos = descargar_productos_scraping(source_name, query, limit=limit_por_query)
+                for p in productos:
+                    if p['codigo_barras'] not in todos_productos:
+                        todos_productos[p['codigo_barras']] = p
+                        source_count += 1
+
+                if productos:
+                    print(f"      '{query}': {len(productos)} productos")
+
+            except Exception as e:
+                print(f"      '{query}': Error - {e}")
+
+            time.sleep(1)  # Pausa entre queries para no sobrecargar
+
+        print(f"      → Total nuevos de {source_name}: {source_count}")
+
+    # Convertir a lista
+    productos_lista = list(todos_productos.values())
+
+    print()
+    print("=" * 60)
+    print(f"📊 RESUMEN: {len(productos_lista)} productos únicos encontrados")
+    print("=" * 60)
+    print()
+
+    # Mostrar desglose por fuente
+    fuentes = {}
+    for p in productos_lista:
+        fuente = p.get('fuente', 'Desconocida')
+        fuentes[fuente] = fuentes.get(fuente, 0) + 1
+
+    print("Productos por fuente:")
+    for fuente, count in sorted(fuentes.items(), key=lambda x: -x[1]):
+        print(f"   • {fuente}: {count}")
+    print()
+
+    # Subir a Firebase
+    subidos = subir_a_firebase(productos_lista, dry_run=dry_run)
+
+    return subidos
+
+
 def main():
     """Función principal."""
     import argparse
@@ -677,11 +766,14 @@ Ejemplos:
   # Importar desde Open Food Facts (API oficial)
   python importar_productos.py --source openfoodfacts --limit 50 --dry-run
 
-  # Importar desde Farmatodo (requiere Selenium)
-  python importar_productos.py --source farmatodo --query "acetaminofen" --limit 10
+  # Importar desde Sambil Online (requiere Selenium)
+  python importar_productos.py --source sambilonline --query "arroz" --limit 10
 
-  # Importar desde Locatel
-  python importar_productos.py --source locatel --query "vitaminas" --limit 10
+  # Importar desde Farmago
+  python importar_productos.py --source farmago --query "pepito" --limit 10
+
+  # IMPORTACIÓN MASIVA - Todas las fuentes automáticamente
+  python importar_productos.py --all --dry-run
 
 Requisitos para scraping:
   pip install selenium webdriver-manager
@@ -696,8 +788,32 @@ Requisitos para scraping:
                         help='Límite de productos a importar')
     parser.add_argument('--dry-run', action='store_true',
                         help='Solo mostrar, no subir a Firebase')
+    parser.add_argument('--all', action='store_true',
+                        help='Importar de TODAS las fuentes automáticamente')
+    parser.add_argument('--limit-off', type=int, default=100,
+                        help='Límite de productos de Open Food Facts (default: 100)')
+    parser.add_argument('--limit-query', type=int, default=10,
+                        help='Límite de productos por query en scraping (default: 10)')
     args = parser.parse_args()
 
+    # Modo importación masiva
+    if args.all:
+        subidos = importar_todo(
+            limit_por_fuente=args.limit_off,
+            limit_por_query=args.limit_query,
+            dry_run=args.dry_run
+        )
+        print()
+        print("=" * 60)
+        if args.dry_run:
+            print("DRY RUN completado.")
+            print("Ejecuta sin --dry-run para subir a Firebase.")
+        else:
+            print(f"Importación masiva completada. {subidos} productos en Firebase.")
+        print("=" * 60)
+        return 0
+
+    # Modo individual
     print("=" * 60)
     print("SIAM - Importador de Productos")
     print(f"Fuente: {args.source.title()}")
