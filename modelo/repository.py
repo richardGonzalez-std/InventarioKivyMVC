@@ -39,18 +39,18 @@ class ProductoRepository:
         self.is_online = False
         self._sync_in_progress = False
 
-    def conectar(self, credentials_path: str = "firebase-credentials.json") -> bool:
+    def conectar(self, config_path: str = "firebase-config.json") -> bool:
         """
         Inicializa conexión con Firebase.
 
         Args:
-            credentials_path: Ruta a credenciales Firebase
+            config_path: Ruta a configuración Firebase (firebase-config.json)
 
         Returns:
             bool: True si conectó (o si solo hay cache)
         """
         if self.firebase:
-            self.is_online = self.firebase.connect(credentials_path)
+            self.is_online = self.firebase.connect(config_path)
             if self.is_online:
                 # Sincronizar cache en background
                 Clock.schedule_once(lambda dt: self._sync_inicial(), 1)
