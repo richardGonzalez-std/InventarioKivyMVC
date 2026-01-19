@@ -149,7 +149,7 @@ class CameraScreen(MDScreen):
             print("✓ Creando nueva instancia de cámara...")
             try:
                 self.camera_widget = Camera(
-                    resolution=(640, 480),
+                    #resolution=(640, 480),
                     allow_stretch=True,
                     play=False  # Empezar pausada, activar después de añadir al layout
                 )
@@ -278,7 +278,8 @@ class CameraScreen(MDScreen):
         self.scan_event = Clock.schedule_interval(self.scan_frame_android, 0.5)
 
     def scan_frame_android(self, dt):
-        """Escanea frame actual usando ZXing Core (optimizado)."""
+        """Escanea frame actual usando ZXing Core (Optimizado con Recorte Central)."""
+        # 1. Validaciones iniciales
         if not self.camera_widget or not self.camera_widget.texture:
             return
         if not ANDROID_SCANNER or not _zxing_reader:
@@ -286,53 +287,71 @@ class CameraScreen(MDScreen):
 
         try:
             texture = self.camera_widget.texture
-            orig_width, orig_height = int(texture.width), int(texture.height)
+            # Obtenemos dimensiones reales
+            w = int(texture.width)
+            h = int(texture.height)
             pixels = texture.pixels
 
-            # OPTIMIZACIÓN: Reducir resolución 2x (4x menos píxeles)
-            scale = 2
-            width = orig_width // scale
-            height = orig_height // scale
-
-            # Convertir pixels a array de enteros RGB (signed int para Java)
-            # Usando list comprehension es ~2x más rápido que for loop
+            # 2. DEFINIR ÁREA DE RECORTE (ROI)
+            # Analizamos solo un recuadro central de 400x300 (o menos si la imagen es pequeña)
+            crop_w = min(w, 400)
+            crop_h = min(h, 300)
+            start_x = (w - crop_w) // 2
+            start_y = (h - crop_h) // 2
+            
+            # Lista para los píxeles convertidos
             pixel_array = []
-            for y in range(height):
-                src_y = y * scale
-                for x in range(width):
-                    src_x = x * scale
-                    idx = (src_y * orig_width + src_x) * 4  # RGBA
+            
+            # 3. BUCLE DE EXTRACCIÓN OPTIMIZADO
+            # Solo recorremos los píxeles dentro del recorte (crop_h * crop_w)
+            for y in range(crop_h):
+                # Calculamos la fila correspondiente en la imagen original
+                orig_y = start_y + y
+                # Índice inicial de la fila en el array de bytes original
+                row_start = (orig_y * w + start_x) * 4
+                
+                for x in range(crop_w):
+                    # Índice exacto del píxel (R, G, B, A)
+                    idx = row_start + (x * 4)
+                    
                     r = pixels[idx]
                     g = pixels[idx + 1]
                     b = pixels[idx + 2]
-                    # ARGB como signed int para Java
-                    argb = (0xFF000000 | (r << 16) | (g << 8) | b)
-                    # Convertir a signed si necesario
-                    if argb > 0x7FFFFFFF:
-                        argb -= 0x100000000
-                    pixel_array.append(argb)
+                    
+                    # 4. CONVERSIÓN A ENTERO CON SIGNO (JAVA)
+                    # Formato ARGB: Alpha(255) | R | G | B
+                    val = 0xFF000000 | (r << 16) | (g << 8) | b
+                    
+                    # Ajuste para Java (si el bit de signo está activo, restar 2^32)
+                    if val > 2147483647:
+                        val -= 4294967296
+                    
+                    pixel_array.append(val)
 
-            # Crear LuminanceSource y BinaryBitmap
-            source = _RGBLuminanceSource(width, height, pixel_array)
+            # 5. DECODIFICACIÓN CON ZXING
+            # Creamos la fuente de luminancia con el tamaño del RECORTE (crop_w, crop_h)
+            source = _RGBLuminanceSource(crop_w, crop_h, pixel_array)
             bitmap = _BinaryBitmap(_HybridBinarizer(source))
 
-            # Intentar decodificar
+            # Intentamos leer el código
             result = _zxing_reader.decodeWithState(bitmap)
 
             if result:
                 code_data = result.getText()
                 code_type = result.getBarcodeFormat().toString()
 
+                # Si encontramos un código nuevo, notificamos
                 if code_data and code_data != self.last_scanned_code:
                     self.last_scanned_code = code_data
                     Clock.schedule_once(lambda dt: self.on_code_scanned(code_data, code_type), 0)
 
         except Exception as e:
-            # NotFoundException es normal cuando no hay código visible
+            # Ignoramos errores de "No encontrado" que ocurren en cada frame vacío
             error_name = type(e).__name__
             if "NotFoundException" not in str(e) and "NotFoundException" not in error_name:
-                print(f"Error scan: {e}")
+                print(f"Error scan loop: {e}")
         finally:
+            # Siempre reseteamos el lector para el siguiente frame
             if _zxing_reader:
                 _zxing_reader.reset()
 
