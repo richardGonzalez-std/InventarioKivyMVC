@@ -66,10 +66,17 @@ class CacheLocal:
                     unidad TEXT DEFAULT 'unidades',
                     ubicacion TEXT,
                     precio_unitario REAL,
+                    imagen_url TEXT,
                     fecha_sync TEXT,
                     datos_extra TEXT
                 )
             ''')
+
+            # Migración: agregar columna imagen_url si no existe
+            try:
+                cursor.execute('ALTER TABLE productos ADD COLUMN imagen_url TEXT')
+            except sqlite3.OperationalError:
+                pass  # Columna ya existe
 
             # Tabla de cola de sincronización (operaciones pendientes)
             cursor.execute('''
@@ -182,13 +189,13 @@ class CacheLocal:
 
             # Extraer datos extra que no tienen columna
             datos_conocidos = ['codigo_barras', 'nombre', 'categoria',
-                             'cantidad', 'unidad', 'ubicacion', 'precio_unitario']
+                             'cantidad', 'unidad', 'ubicacion', 'precio_unitario', 'imagen_url']
             datos_extra = {k: v for k, v in producto.items() if k not in datos_conocidos}
 
             cursor.execute('''
                 INSERT OR REPLACE INTO productos
-                (codigo_barras, nombre, categoria, cantidad, unidad, ubicacion, precio_unitario, fecha_sync, datos_extra)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (codigo_barras, nombre, categoria, cantidad, unidad, ubicacion, precio_unitario, imagen_url, fecha_sync, datos_extra)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (
                 producto.get('codigo_barras'),
                 producto.get('nombre', ''),
@@ -197,6 +204,7 @@ class CacheLocal:
                 producto.get('unidad', 'unidades'),
                 producto.get('ubicacion', ''),
                 producto.get('precio_unitario'),
+                producto.get('imagen_url', ''),
                 datetime.now().isoformat(),
                 json.dumps(datos_extra) if datos_extra else None
             ))

@@ -1,6 +1,7 @@
 # vista/screens/inventory_screen.py
 """
-Pantalla de Inventario - Lista de productos desde Firebase.
+Pantalla de Inventario - Lista de productos con soporte offline.
+Usa ProductoRepository que maneja cache local + Firebase.
 """
 from kivy.properties import ListProperty, BooleanProperty, StringProperty
 from kivy.clock import Clock
@@ -10,17 +11,18 @@ from kivymd.uix.list import MDListItem, MDListItemLeadingAvatar, MDListItemHeadl
 
 class InventoryScreen(MDScreen):
     """
-    Pantalla de inventario que muestra productos desde Firebase.
-    Diseño minimalista con lista de productos e imágenes.
+    Pantalla de inventario que muestra productos.
+    Usa cache local para funcionar offline.
     """
 
     productos = ListProperty([])
     is_loading = BooleanProperty(False)
     error_message = StringProperty("")
+    is_offline = BooleanProperty(False)
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.firebase = None
+        self.repository = None
 
     def on_enter(self, *args):
         """Carga productos cuando entra a la pantalla."""
@@ -32,7 +34,7 @@ class InventoryScreen(MDScreen):
         print(f"✓ Saliendo de InventoryScreen: {self.name}")
 
     def cargar_productos(self):
-        """Carga productos desde Firebase."""
+        """Carga productos desde cache local y/o Firebase."""
         # Evitar múltiples cargas simultáneas
         if self.is_loading:
             return
@@ -43,21 +45,39 @@ class InventoryScreen(MDScreen):
         # Actualizar UI de carga
         self._mostrar_cargando()
 
-        # Inicializar Firebase si no está conectado
-        if self.firebase is None:
-            from modelo.firebase_client import FirebaseClient
-            self.firebase = FirebaseClient()
-            self.firebase.connect()
+        # Inicializar Repository si no existe
+        if self.repository is None:
+            from modelo.repository import ProductoRepository
+            self.repository = ProductoRepository()
+            self.repository.conectar()
 
-        if not self.firebase.is_connected:
-            self.error_message = "No se pudo conectar a Firebase"
+        # Cargar desde cache (inmediato, funciona offline)
+        self.is_offline = not self.repository.is_online
+        productos_cache = self.repository.get_todos()
+
+        if productos_cache:
+            # Mostrar datos del cache inmediatamente
+            self._on_productos_cargados(productos_cache)
+
+            # Si hay conexión, sincronizar en background
+            if self.repository.is_online:
+                self._sync_desde_firebase()
+        elif self.repository.is_online:
+            # Cache vacío, intentar cargar desde Firebase
+            self._sync_desde_firebase()
+        else:
+            # Sin cache y sin conexión
             self.is_loading = False
+            self.error_message = "Sin conexión y sin datos en cache"
             self._mostrar_error()
+
+    def _sync_desde_firebase(self):
+        """Sincroniza productos desde Firebase en background."""
+        if not self.repository.firebase:
             return
 
-        # Fetch asíncrono
-        self.firebase.get_todos_productos_async(
-            on_success=self._on_productos_cargados,
+        self.repository.firebase.get_todos_productos_async(
+            on_success=self._on_firebase_sync,
             on_error=self._on_error_carga
         )
 
@@ -65,17 +85,34 @@ class InventoryScreen(MDScreen):
         """Callback cuando se cargan los productos."""
         self.is_loading = False
         self.productos = productos or []
-        print(f"✓ Cargados {len(self.productos)} productos")
+        modo = "offline" if self.is_offline else "online"
+        print(f"✓ Cargados {len(self.productos)} productos ({modo})")
 
         # Actualizar lista en el hilo principal
         Clock.schedule_once(lambda dt: self._actualizar_lista())
 
+    def _on_firebase_sync(self, productos):
+        """Callback cuando llegan datos de Firebase."""
+        if productos:
+            # Guardar en cache local para uso offline
+            self.repository.cache.sincronizar_desde_firebase(productos)
+            self.productos = productos
+            self.is_offline = False
+            print(f"✓ Sincronizados {len(productos)} productos desde Firebase")
+            Clock.schedule_once(lambda dt: self._actualizar_lista())
+        self.is_loading = False
+
     def _on_error_carga(self, error):
         """Callback cuando hay error de carga."""
         self.is_loading = False
-        self.error_message = str(error)
-        print(f"✗ Error cargando productos: {error}")
-        Clock.schedule_once(lambda dt: self._mostrar_error())
+        # Si ya hay productos en cache, solo mostrar warning
+        if self.productos:
+            print(f"⚠ Error sync Firebase (usando cache): {error}")
+            self.is_offline = True
+        else:
+            self.error_message = str(error)
+            print(f"✗ Error cargando productos: {error}")
+            Clock.schedule_once(lambda dt: self._mostrar_error())
 
     def _mostrar_cargando(self):
         """Muestra indicador de carga."""

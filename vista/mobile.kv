@@ -243,6 +243,27 @@
             id: inventory_toolbar
             type: "small"
 
+            MDTopAppBarLeadingButtonContainer:
+                MDBoxLayout:
+                    size_hint_x: None
+                    width: "80dp" if root.is_offline else "0dp"
+                    opacity: 1 if root.is_offline else 0
+                    padding: ["8dp", "0dp"]
+
+                    MDIcon:
+                        icon: "cloud-off-outline"
+                        theme_text_color: "Custom"
+                        text_color: [0.9, 0.6, 0.1, 1]
+                        pos_hint: {"center_y": 0.5}
+
+                    MDLabel:
+                        text: "Offline"
+                        font_style: "Label"
+                        role: "small"
+                        theme_text_color: "Custom"
+                        text_color: [0.9, 0.6, 0.1, 1]
+                        pos_hint: {"center_y": 0.5}
+
             MDTopAppBarTitle:
                 text: "Inventario"
                 halign: "center"
@@ -303,21 +324,21 @@
                 padding: "20dp"
 
                 MDIcon:
-                    icon: "package-variant"
+                    icon: "cloud-off-outline" if root.is_offline else "package-variant"
                     font_size: "64sp"
                     pos_hint: {"center_x": 0.5}
                     theme_text_color: "Custom"
-                    text_color: [0.7, 0.7, 0.7, 1]
+                    text_color: [0.9, 0.6, 0.1, 1] if root.is_offline else [0.7, 0.7, 0.7, 1]
 
                 MDLabel:
-                    text: "Sin productos"
+                    text: "Sin conexión" if root.is_offline else "Sin productos"
                     halign: "center"
                     font_style: "Title"
                     role: "medium"
                     theme_text_color: "Secondary"
 
                 MDLabel:
-                    text: "Importa productos con el script"
+                    text: "Conecta a internet para sincronizar" if root.is_offline else "Importa productos con el script"
                     halign: "center"
                     theme_text_color: "Hint"
 
