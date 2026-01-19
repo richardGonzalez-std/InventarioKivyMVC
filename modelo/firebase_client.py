@@ -6,6 +6,7 @@ Funciona en Android y Desktop.
 
 import os
 import json
+import ssl
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 from urllib.request import Request, urlopen
@@ -14,6 +15,31 @@ from urllib.parse import urlencode
 
 # Para requests async en Kivy
 from kivy.network.urlrequest import UrlRequest
+
+# Crear contexto SSL que funcione en Android
+def _create_ssl_context():
+    """Crea contexto SSL compatible con Android."""
+    try:
+        # Intentar usar certifi si está disponible
+        import certifi
+        return ssl.create_default_context(cafile=certifi.where())
+    except ImportError:
+        pass
+
+    try:
+        # Intentar contexto por defecto
+        ctx = ssl.create_default_context()
+        return ctx
+    except Exception:
+        pass
+
+    # Fallback: contexto sin verificación (menos seguro pero funciona)
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    return ctx
+
+_ssl_context = _create_ssl_context()
 
 
 class FirebaseClient:
@@ -107,7 +133,7 @@ class FirebaseClient:
         try:
             url = f"{self.base_url}/productos/{codigo_barras}?key={self.api_key}"
             req = Request(url)
-            response = urlopen(req, timeout=10)
+            response = urlopen(req, timeout=10, context=_ssl_context)
             data = json.loads(response.read().decode())
 
             return self._firestore_to_dict(data, codigo_barras)
@@ -129,7 +155,7 @@ class FirebaseClient:
         try:
             url = f"{self.base_url}/productos?key={self.api_key}"
             req = Request(url)
-            response = urlopen(req, timeout=15)
+            response = urlopen(req, timeout=15, context=_ssl_context)
             data = json.loads(response.read().decode())
 
             productos = []
@@ -228,7 +254,7 @@ class FirebaseClient:
                 headers={'Content-Type': 'application/json'},
                 method='POST'
             )
-            response = urlopen(req, timeout=10)
+            response = urlopen(req, timeout=10, context=_ssl_context)
             return response.status == 200
 
         except Exception as e:
@@ -255,7 +281,7 @@ class FirebaseClient:
                 headers={'Content-Type': 'application/json'},
                 method='PATCH'
             )
-            response = urlopen(req, timeout=10)
+            response = urlopen(req, timeout=10, context=_ssl_context)
             return response.status == 200
 
         except Exception as e:
@@ -292,7 +318,7 @@ class FirebaseClient:
                 headers={'Content-Type': 'application/json'},
                 method='POST'
             )
-            response = urlopen(req, timeout=10)
+            response = urlopen(req, timeout=10, context=_ssl_context)
             return response.status == 200
 
         except Exception as e:

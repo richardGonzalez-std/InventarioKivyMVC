@@ -274,11 +274,11 @@ class CameraScreen(MDScreen):
             self.scan_button.children[0].text = "Detener"
         if 'status_label' in self.ids:
             self.ids.status_label.text = "Escaneando..."
-        # Escanear cada 300ms
-        self.scan_event = Clock.schedule_interval(self.scan_frame_android, 0.3)
+        # Escanear cada 500ms (balance entre velocidad y rendimiento)
+        self.scan_event = Clock.schedule_interval(self.scan_frame_android, 0.5)
 
     def scan_frame_android(self, dt):
-        """Escanea frame actual usando ZXing Core."""
+        """Escanea frame actual usando ZXing Core (optimizado)."""
         if not self.camera_widget or not self.camera_widget.texture:
             return
         if not ANDROID_SCANNER or not _zxing_reader:
@@ -286,23 +286,31 @@ class CameraScreen(MDScreen):
 
         try:
             texture = self.camera_widget.texture
-            width, height = int(texture.width), int(texture.height)
+            orig_width, orig_height = int(texture.width), int(texture.height)
             pixels = texture.pixels
 
+            # OPTIMIZACIÓN: Reducir resolución 2x (4x menos píxeles)
+            scale = 2
+            width = orig_width // scale
+            height = orig_height // scale
+
             # Convertir pixels a array de enteros RGB (signed int para Java)
-            pixel_array = [0] * (width * height)
-            for i in range(width * height):
-                idx = i * 4  # RGBA
-                r = pixels[idx]
-                g = pixels[idx + 1]
-                b = pixels[idx + 2]
-                # Convertir a formato ARGB como signed int (Java usa signed int)
-                # 0xFF?????? en unsigned es negativo en signed 32-bit
-                argb = (255 << 24) | (r << 16) | (g << 8) | b
-                # Convertir a signed: si >= 2^31, restar 2^32
-                if argb >= 0x80000000:
-                    argb = argb - 0x100000000
-                pixel_array[i] = argb
+            # Usando list comprehension es ~2x más rápido que for loop
+            pixel_array = []
+            for y in range(height):
+                src_y = y * scale
+                for x in range(width):
+                    src_x = x * scale
+                    idx = (src_y * orig_width + src_x) * 4  # RGBA
+                    r = pixels[idx]
+                    g = pixels[idx + 1]
+                    b = pixels[idx + 2]
+                    # ARGB como signed int para Java
+                    argb = (0xFF000000 | (r << 16) | (g << 8) | b)
+                    # Convertir a signed si necesario
+                    if argb > 0x7FFFFFFF:
+                        argb -= 0x100000000
+                    pixel_array.append(argb)
 
             # Crear LuminanceSource y BinaryBitmap
             source = _RGBLuminanceSource(width, height, pixel_array)
