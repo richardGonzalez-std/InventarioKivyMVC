@@ -14,11 +14,13 @@ from kivymd.uix.dialog import MDDialog, MDDialogHeadlineText, MDDialogSupporting
 from kivymd.uix.textfield import MDTextField, MDTextFieldHintText
 from kivymd.uix.snackbar import MDSnackbar, MDSnackbarText
 
+# Numpy siempre disponible (necesario para escaneo optimizado)
+import numpy as np
+
 # Para escaneo de códigos (PC)
 try:
     from pyzbar import pyzbar
     import cv2
-    import numpy as np
     PYZBAR_AVAILABLE = True
 except ImportError:
     PYZBAR_AVAILABLE = False
@@ -278,7 +280,7 @@ class CameraScreen(MDScreen):
         self.scan_event = Clock.schedule_interval(self.scan_frame_android, 0.5)
 
     def scan_frame_android(self, dt):
-        """Escanea frame actual usando ZXing Core (Optimizado con Recorte Central)."""
+        """Escanea frame actual usando ZXing Core (Optimizado con array operations)."""
         # 1. Validaciones iniciales
         if not self.camera_widget or not self.camera_widget.texture:
             return
@@ -287,71 +289,54 @@ class CameraScreen(MDScreen):
 
         try:
             texture = self.camera_widget.texture
-            # Obtenemos dimensiones reales
             w = int(texture.width)
             h = int(texture.height)
             pixels = texture.pixels
 
-            # 2. DEFINIR ÁREA DE RECORTE (ROI)
-            # Analizamos solo un recuadro central de 400x300 (o menos si la imagen es pequeña)
-            crop_w = min(w, 400)
-            crop_h = min(h, 300)
+            # 2. Convertir a numpy array (MUCHO más rápido que loops Python)
+            pixel_bytes = bytes(pixels) if not isinstance(pixels, bytes) else pixels
+            img = np.frombuffer(pixel_bytes, dtype=np.uint8).reshape(h, w, 4)
+
+            # 3. Recorte central (ROI más pequeño para velocidad)
+            crop_w = min(w, 320)
+            crop_h = min(h, 240)
             start_x = (w - crop_w) // 2
             start_y = (h - crop_h) // 2
-            
-            # Lista para los píxeles convertidos
-            pixel_array = []
-            
-            # 3. BUCLE DE EXTRACCIÓN OPTIMIZADO
-            # Solo recorremos los píxeles dentro del recorte (crop_h * crop_w)
-            for y in range(crop_h):
-                # Calculamos la fila correspondiente en la imagen original
-                orig_y = start_y + y
-                # Índice inicial de la fila en el array de bytes original
-                row_start = (orig_y * w + start_x) * 4
-                
-                for x in range(crop_w):
-                    # Índice exacto del píxel (R, G, B, A)
-                    idx = row_start + (x * 4)
-                    
-                    r = pixels[idx]
-                    g = pixels[idx + 1]
-                    b = pixels[idx + 2]
-                    
-                    # 4. CONVERSIÓN A ENTERO CON SIGNO (JAVA)
-                    # Formato ARGB: Alpha(255) | R | G | B
-                    val = 0xFF000000 | (r << 16) | (g << 8) | b
-                    
-                    # Ajuste para Java (si el bit de signo está activo, restar 2^32)
-                    if val > 2147483647:
-                        val -= 4294967296
-                    
-                    pixel_array.append(val)
 
-            # 5. DECODIFICACIÓN CON ZXING
-            # Creamos la fuente de luminancia con el tamaño del RECORTE (crop_w, crop_h)
+            roi = img[start_y:start_y+crop_h, start_x:start_x+crop_w]
+
+            # 4. Convertir RGBA a ARGB int32 (formato Java) - operación vectorizada
+            r = roi[:, :, 0].astype(np.int32)
+            g = roi[:, :, 1].astype(np.int32)
+            b = roi[:, :, 2].astype(np.int32)
+
+            # ARGB con alpha=255: 0xFF000000 | (R << 16) | (G << 8) | B
+            argb = (0xFF << 24) | (r << 16) | (g << 8) | b
+
+            # Convertir a signed int32 (Java usa signed)
+            argb = argb.astype(np.int32)
+
+            # Flatten a lista para ZXing
+            pixel_array = argb.flatten().tolist()
+
+            # 5. Decodificación con ZXing
             source = _RGBLuminanceSource(crop_w, crop_h, pixel_array)
             bitmap = _BinaryBitmap(_HybridBinarizer(source))
-
-            # Intentamos leer el código
             result = _zxing_reader.decodeWithState(bitmap)
 
             if result:
                 code_data = result.getText()
                 code_type = result.getBarcodeFormat().toString()
 
-                # Si encontramos un código nuevo, notificamos
                 if code_data and code_data != self.last_scanned_code:
                     self.last_scanned_code = code_data
                     Clock.schedule_once(lambda dt: self.on_code_scanned(code_data, code_type), 0)
 
         except Exception as e:
-            # Ignoramos errores de "No encontrado" que ocurren en cada frame vacío
             error_name = type(e).__name__
             if "NotFoundException" not in str(e) and "NotFoundException" not in error_name:
-                print(f"Error scan loop: {e}")
+                print(f"Error scan: {e}")
         finally:
-            # Siempre reseteamos el lector para el siguiente frame
             if _zxing_reader:
                 _zxing_reader.reset()
 

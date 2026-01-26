@@ -2,11 +2,16 @@
 """
 Pantalla de Inventario - Lista de productos con soporte offline.
 Usa ProductoRepository que maneja cache local + Firebase.
+Optimizado para carga progresiva y evitar bloqueos de UI.
 """
 from kivy.properties import ListProperty, BooleanProperty, StringProperty
 from kivy.clock import Clock
 from kivymd.uix.screen import MDScreen
-from kivymd.uix.list import MDListItem, MDListItemLeadingAvatar, MDListItemHeadlineText, MDListItemSupportingText, MDListItemTertiaryText
+from kivymd.uix.list import MDListItem, MDListItemLeadingIcon, MDListItemHeadlineText, MDListItemSupportingText, MDListItemTertiaryText
+
+# Constantes de optimización
+BATCH_SIZE = 10  # Productos a cargar por frame
+BATCH_DELAY = 0.016  # ~60fps entre batches
 
 
 class InventoryScreen(MDScreen):
@@ -23,6 +28,8 @@ class InventoryScreen(MDScreen):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.repository = None
+        self._batch_event = None  # Para cancelar carga en progreso
+        self._productos_pendientes = []  # Cola de productos por renderizar
 
     def on_enter(self, *args):
         """Carga productos cuando entra a la pantalla."""
@@ -32,6 +39,10 @@ class InventoryScreen(MDScreen):
     def on_leave(self, *args):
         """Callback cuando sale de la pantalla."""
         print(f"✓ Saliendo de InventoryScreen: {self.name}")
+        # Cancelar carga de batches pendientes
+        if self._batch_event:
+            self._batch_event.cancel()
+            self._batch_event = None
 
     def cargar_productos(self):
         """Carga productos desde cache local y/o Firebase."""
@@ -96,10 +107,12 @@ class InventoryScreen(MDScreen):
         if productos:
             # Guardar en cache local para uso offline
             self.repository.cache.sincronizar_desde_firebase(productos)
-            self.productos = productos
             self.is_offline = False
             print(f"✓ Sincronizados {len(productos)} productos desde Firebase")
-            Clock.schedule_once(lambda dt: self._actualizar_lista())
+            # Solo actualizar UI si hay cambios significativos
+            if len(productos) != len(self.productos):
+                self.productos = productos
+                Clock.schedule_once(lambda dt: self._actualizar_lista())
         self.is_loading = False
 
     def _on_error_carga(self, error):
@@ -128,20 +141,45 @@ class InventoryScreen(MDScreen):
             lista.clear_widgets()
 
     def _actualizar_lista(self):
-        """Actualiza la lista de productos en la UI."""
+        """Actualiza la lista de productos en la UI usando carga por batches."""
         lista = self.ids.get('product_list')
         if not lista:
             print("✗ No se encontró product_list")
             return
+
+        # Cancelar carga anterior si existe
+        if self._batch_event:
+            self._batch_event.cancel()
 
         lista.clear_widgets()
 
         if not self.productos:
             return
 
-        for producto in self.productos:
+        # Preparar cola de productos para carga progresiva
+        self._productos_pendientes = list(self.productos)
+        self._cargar_batch()
+
+    def _cargar_batch(self, dt=None):
+        """Carga un batch de productos en la UI."""
+        lista = self.ids.get('product_list')
+        if not lista or not self._productos_pendientes:
+            self._batch_event = None
+            return
+
+        # Procesar batch actual
+        batch = self._productos_pendientes[:BATCH_SIZE]
+        self._productos_pendientes = self._productos_pendientes[BATCH_SIZE:]
+
+        for producto in batch:
             item = self._crear_item_producto(producto)
             lista.add_widget(item)
+
+        # Programar siguiente batch si quedan productos
+        if self._productos_pendientes:
+            self._batch_event = Clock.schedule_once(self._cargar_batch, BATCH_DELAY)
+        else:
+            self._batch_event = None
 
     def _crear_item_producto(self, producto):
         """Crea un item de lista para un producto."""
@@ -149,7 +187,6 @@ class InventoryScreen(MDScreen):
         categoria = producto.get('categoria', 'General')
         cantidad = producto.get('cantidad', 0)
         codigo = producto.get('codigo_barras', '')
-        imagen_url = producto.get('imagen_url', '')
         precio = producto.get('precio', 0)
 
         # Crear item de lista
@@ -157,12 +194,9 @@ class InventoryScreen(MDScreen):
             on_release=lambda x, p=producto: self._on_producto_click(p)
         )
 
-        # Imagen del producto
-        if imagen_url:
-            avatar = MDListItemLeadingAvatar(source=imagen_url)
-        else:
-            avatar = MDListItemLeadingAvatar(source="assets/placeholder.png")
-        item.add_widget(avatar)
+        # Icono del producto (evita errores de imagen no encontrada)
+        icon = MDListItemLeadingIcon(icon="package-variant")
+        item.add_widget(icon)
 
         # Nombre del producto
         item.add_widget(MDListItemHeadlineText(text=nombre[:40]))

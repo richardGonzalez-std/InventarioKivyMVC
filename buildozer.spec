@@ -22,7 +22,7 @@ source.exclude_dirs = tests, bin, venv, .venv, .buildozer, __pycache__, hoja de 
 version = 0.1
 
 # (list) Application requirements
-requirements = python3,kivy,pillow,pyjnius,certifi,openssl,https://github.com/kivymd/KivyMD/archive/master.zip,materialyoucolor,materialshapes,asyncgui,asynckivy
+requirements = python3,kivy,pillow,pyjnius,certifi,openssl,https://github.com/kivymd/KivyMD/archive/master.zip,materialyoucolor,materialshapes,asyncgui,asynckivy,numpy
 
 # (list) Supported orientations
 orientation = portrait
