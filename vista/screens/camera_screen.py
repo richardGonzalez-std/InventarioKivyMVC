@@ -270,32 +270,49 @@ class CameraScreen(MDScreen):
 
     def start_scanning_android(self):
         """Inicia escaneo continuo con ZXing Core."""
+        print(f"[SCAN] start_scanning_android llamado. ANDROID_SCANNER={ANDROID_SCANNER}")
         self.scanning_active = True
         self.last_scanned_code = None
+        self._scan_frame_count = 0
         if hasattr(self, 'scan_button'):
             self.scan_button.children[0].text = "Detener"
         if 'status_label' in self.ids:
             self.ids.status_label.text = "Escaneando..."
         # Escanear cada 500ms (balance entre velocidad y rendimiento)
         self.scan_event = Clock.schedule_interval(self.scan_frame_android, 0.5)
+        print("[SCAN] Intervalo programado cada 0.5s")
 
     def scan_frame_android(self, dt):
         """Escanea frame actual usando ZXing Core (Optimizado con array operations)."""
+        import time
+        self._scan_frame_count = getattr(self, '_scan_frame_count', 0) + 1
+        frame_num = self._scan_frame_count
+
         # 1. Validaciones iniciales
         if not self.camera_widget or not self.camera_widget.texture:
+            print(f"[SCAN #{frame_num}] Sin cámara o textura")
             return
-        if not ANDROID_SCANNER or not _zxing_reader:
+        if not ANDROID_SCANNER:
+            print(f"[SCAN #{frame_num}] ANDROID_SCANNER=False")
+            return
+        if not _zxing_reader:
+            print(f"[SCAN #{frame_num}] _zxing_reader=None")
             return
 
+        t0 = time.time()
         try:
             texture = self.camera_widget.texture
             w = int(texture.width)
             h = int(texture.height)
             pixels = texture.pixels
+            t1 = time.time()
+            print(f"[SCAN #{frame_num}] Textura: {w}x{h}, pixels={len(pixels)} bytes ({(t1-t0)*1000:.0f}ms)")
 
             # 2. Convertir a numpy array (MUCHO más rápido que loops Python)
             pixel_bytes = bytes(pixels) if not isinstance(pixels, bytes) else pixels
             img = np.frombuffer(pixel_bytes, dtype=np.uint8).reshape(h, w, 4)
+            t2 = time.time()
+            print(f"[SCAN #{frame_num}] Numpy reshape OK ({(t2-t1)*1000:.0f}ms)")
 
             # 3. Recorte central (ROI más pequeño para velocidad)
             crop_w = min(w, 320)
@@ -304,6 +321,8 @@ class CameraScreen(MDScreen):
             start_y = (h - crop_h) // 2
 
             roi = img[start_y:start_y+crop_h, start_x:start_x+crop_w]
+            t3 = time.time()
+            print(f"[SCAN #{frame_num}] ROI {crop_w}x{crop_h} ({(t3-t2)*1000:.0f}ms)")
 
             # 4. Convertir RGBA a ARGB int32 (formato Java) - operación vectorizada
             r = roi[:, :, 0].astype(np.int32)
@@ -315,27 +334,44 @@ class CameraScreen(MDScreen):
 
             # Convertir a signed int32 (Java usa signed)
             argb = argb.astype(np.int32)
+            t4 = time.time()
+            print(f"[SCAN #{frame_num}] ARGB conversion ({(t4-t3)*1000:.0f}ms)")
 
             # Flatten a lista para ZXing
             pixel_array = argb.flatten().tolist()
+            t5 = time.time()
+            print(f"[SCAN #{frame_num}] tolist() {len(pixel_array)} elementos ({(t5-t4)*1000:.0f}ms)")
 
             # 5. Decodificación con ZXing
             source = _RGBLuminanceSource(crop_w, crop_h, pixel_array)
+            t6 = time.time()
+            print(f"[SCAN #{frame_num}] RGBLuminanceSource ({(t6-t5)*1000:.0f}ms)")
+
             bitmap = _BinaryBitmap(_HybridBinarizer(source))
+            t7 = time.time()
+            print(f"[SCAN #{frame_num}] BinaryBitmap ({(t7-t6)*1000:.0f}ms)")
+
             result = _zxing_reader.decodeWithState(bitmap)
+            t8 = time.time()
+            print(f"[SCAN #{frame_num}] decodeWithState ({(t8-t7)*1000:.0f}ms) result={result is not None}")
 
             if result:
                 code_data = result.getText()
                 code_type = result.getBarcodeFormat().toString()
+                print(f"[SCAN #{frame_num}] CÓDIGO ENCONTRADO: {code_data} ({code_type})")
 
                 if code_data and code_data != self.last_scanned_code:
                     self.last_scanned_code = code_data
                     Clock.schedule_once(lambda dt: self.on_code_scanned(code_data, code_type), 0)
 
+            print(f"[SCAN #{frame_num}] TOTAL: {(t8-t0)*1000:.0f}ms")
+
         except Exception as e:
             error_name = type(e).__name__
             if "NotFoundException" not in str(e) and "NotFoundException" not in error_name:
-                print(f"Error scan: {e}")
+                print(f"[SCAN #{frame_num}] ERROR: {error_name}: {e}")
+            else:
+                print(f"[SCAN #{frame_num}] No code found ({(time.time()-t0)*1000:.0f}ms)")
         finally:
             if _zxing_reader:
                 _zxing_reader.reset()
