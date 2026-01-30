@@ -1,7 +1,8 @@
 #:import get_color_from_hex kivy.utils.get_color_from_hex
+#:import ProductoItem vista.screens.inventory_screen.ProductoItem
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# COLORES CORPOELEC
+# COLORES DECORACIONES
 # ═══════════════════════════════════════════════════════════════════════════════
 #:set CORPOELEC_BLUE [0, 0.102, 0.439, 1]
 #:set CORPOELEC_RED [0.89, 0.11, 0.137, 1]
@@ -132,7 +133,7 @@
             padding: "10dp"
 
             MDLabel:
-                text: "CORPOELEC - Comedor de Empleados"
+                text: "DECORACIONES 100% VENEZOLANO C.A"
                 halign: "center"
                 font_style: "Label"
                 role: "small"
@@ -342,11 +343,19 @@
                     halign: "center"
                     theme_text_color: "Hint"
 
-            # Lista de productos (scroll)
-            MDScrollView:
+            # Lista de productos (RecycleView para rendimiento)
+            RecycleView:
+                id: product_rv
+                viewclass: 'ProductoItem'
 
-                MDList:
-                    id: product_list
+                RecycleBoxLayout:
+                    orientation: 'vertical'
+                    default_size: None, dp(92)
+                    default_size_hint: 1, None
+                    size_hint_y: None
+                    height: self.minimum_height
+                    spacing: dp(4)
+                    padding: dp(8)
 
         # FAB para agregar
         MDAnchorLayout:

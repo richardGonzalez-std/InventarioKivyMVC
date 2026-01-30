@@ -291,8 +291,9 @@ class ProductoRepository:
         # Sincronizar con Firebase
         if self.is_online and self.firebase:
             try:
-                asyncio.create_task(self.firebase.crear_producto(producto.copy()))
-            except RuntimeError:
+                self.firebase.crear_producto_sync(producto.copy())
+            except Exception as e:
+                print(f"⚠ Error subiendo a Firebase: {e}")
                 self.cache.agregar_a_cola_sync("crear", "productos", producto)
         else:
             self.cache.agregar_a_cola_sync("crear", "productos", producto)

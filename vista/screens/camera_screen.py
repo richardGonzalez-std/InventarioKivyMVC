@@ -278,7 +278,7 @@ class CameraScreen(MDScreen):
             self.scan_button.children[0].text = "Detener"
         if 'status_label' in self.ids:
             self.ids.status_label.text = "Escaneando..."
-        # Escanear cada 500ms (balance entre velocidad y rendimiento)
+        # Escanear cada 500ms
         self.scan_event = Clock.schedule_interval(self.scan_frame_android, 0.5)
         print("[SCAN] Intervalo programado cada 0.5s")
 
@@ -308,7 +308,7 @@ class CameraScreen(MDScreen):
             t1 = time.time()
             print(f"[SCAN #{frame_num}] Textura: {w}x{h}, pixels={len(pixels)} bytes ({(t1-t0)*1000:.0f}ms)")
 
-            # 2. Convertir a numpy array (MUCHO más rápido que loops Python)
+            # Convertir a numpy array
             pixel_bytes = bytes(pixels) if not isinstance(pixels, bytes) else pixels
             img = np.frombuffer(pixel_bytes, dtype=np.uint8).reshape(h, w, 4)
             t2 = time.time()
@@ -362,6 +362,7 @@ class CameraScreen(MDScreen):
 
                 if code_data and code_data != self.last_scanned_code:
                     self.last_scanned_code = code_data
+                    print(f"✓ Código escaneado: {code_data} ({code_type})")
                     Clock.schedule_once(lambda dt: self.on_code_scanned(code_data, code_type), 0)
 
             print(f"[SCAN #{frame_num}] TOTAL: {(t8-t0)*1000:.0f}ms")
@@ -445,7 +446,9 @@ class CameraScreen(MDScreen):
         if self.scanning_active:
             self.scanning_active = False
             if self.scan_event: self.scan_event.cancel()
-            if hasattr(self, 'scan_button'): self.scan_button.children[0].text = "🔍 Iniciar Escaneo"
+            if hasattr(self, '_scan_timeout') and self._scan_timeout:
+                self._scan_timeout.cancel()
+            if hasattr(self, 'scan_button'): self.scan_button.children[0].text = "Escanear"
 
     def scan_frame(self, dt):
         if not self.camera_widget or not self.camera_widget.texture: return
@@ -532,14 +535,31 @@ class CameraScreen(MDScreen):
         self.dialog.open()
 
     def _mostrar_dialog_nuevo(self, codigo):
-        """Muestra diálogo para crear nuevo producto."""
+        """Muestra diálogo para crear nuevo producto con campo de nombre."""
         if self.dialog:
             self.dialog.dismiss()
 
+        # Campo para nombre del producto
+        self.nombre_producto_field = MDTextField(
+            MDTextFieldHintText(text="Nombre del producto"),
+            mode="outlined",
+        )
+
+        self._codigo_nuevo = codigo  # Guardar código para usar al registrar
+
         self.dialog = MDDialog(
-            MDDialogHeadlineText(text="Producto no encontrado"),
+            MDDialogHeadlineText(text="Registrar Producto Nuevo"),
             MDDialogSupportingText(
-                text=f"El código {codigo} no existe en la base de datos.\n\n¿Desea registrarlo?"
+                text=f"Código: {codigo}"
+            ),
+            MDDialogContentContainer(
+                MDBoxLayout(
+                    self.nombre_producto_field,
+                    orientation="vertical",
+                    spacing="12dp",
+                    padding="12dp",
+                    adaptive_height=True,
+                ),
             ),
             MDDialogButtonContainer(
                 MDButton(
@@ -548,9 +568,9 @@ class CameraScreen(MDScreen):
                     on_release=lambda x: self.dialog.dismiss()
                 ),
                 MDButton(
-                    MDButtonText(text="Registrar"),
+                    MDButtonText(text="Guardar"),
                     style="filled",
-                    on_release=lambda x: self._ir_a_registro(codigo)
+                    on_release=lambda x: self._guardar_producto_nuevo()
                 ),
                 spacing="8dp",
             ),
@@ -643,13 +663,47 @@ class CameraScreen(MDScreen):
         else:
             self._mostrar_snackbar(mensaje or f"✗ Error al registrar {tipo}")
 
-    def _ir_a_registro(self, codigo):
-        """Navega a pantalla de registro con el código."""
+    def _guardar_producto_nuevo(self):
+        """Guarda el producto nuevo en la base de datos."""
+        if not hasattr(self, 'nombre_producto_field') or not hasattr(self, '_codigo_nuevo'):
+            return
+
+        nombre = self.nombre_producto_field.text.strip()
+        codigo = self._codigo_nuevo
+
+        if not nombre:
+            self._mostrar_snackbar("Ingrese el nombre del producto")
+            return
+
         if self.dialog:
             self.dialog.dismiss()
-        # TODO: Navegar a pantalla de registro de productos
-        self._mostrar_snackbar(f"📝 Registrar: {codigo}")
-        print(f"TODO: Navegar a registro con código {codigo}")
+
+        # Crear producto con datos mínimos
+        producto = {
+            'codigo_barras': codigo,
+            'nombre': nombre,
+            'cantidad': 0,
+            'categoria': 'General',
+            'precio': 0,
+        }
+
+        # Guardar usando el repositorio
+        if self.repository:
+            self.repository.crear_producto(
+                producto=producto,
+                callback=lambda ok, msg: self._on_producto_creado(ok, msg, nombre)
+            )
+        else:
+            self._mostrar_snackbar("Error: Repositorio no disponible")
+
+    def _on_producto_creado(self, exito, mensaje, nombre):
+        """Callback cuando se crea un producto."""
+        if exito:
+            self._mostrar_snackbar(f"Producto '{nombre}' registrado")
+            print(f"✓ Producto creado: {nombre}")
+        else:
+            self._mostrar_snackbar(f"Error: {mensaje}")
+            print(f"✗ Error creando producto: {mensaje}")
 
     def _mostrar_snackbar(self, mensaje):
         """Muestra mensaje snackbar."""

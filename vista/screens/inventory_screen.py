@@ -1,23 +1,136 @@
 # vista/screens/inventory_screen.py
 """
-Pantalla de Inventario - Lista de productos con soporte offline.
-Usa ProductoRepository que maneja cache local + Firebase.
-Optimizado para carga progresiva y evitar bloqueos de UI.
+Pantalla de Inventario con RecycleView para rendimiento óptimo.
+Diseño con imagen de producto estilo MDListItem.
 """
-from kivy.properties import ListProperty, BooleanProperty, StringProperty
+from kivy.properties import ListProperty, BooleanProperty, StringProperty, NumericProperty
 from kivy.clock import Clock
+from kivy.uix.recycleview import RecycleView
+from kivy.uix.recycleview.views import RecycleDataViewBehavior
+from kivy.uix.recycleboxlayout import RecycleBoxLayout
+from kivy.metrics import dp
 from kivymd.uix.screen import MDScreen
-from kivymd.uix.list import MDListItem, MDListItemLeadingIcon, MDListItemHeadlineText, MDListItemSupportingText, MDListItemTertiaryText
+from kivymd.uix.boxlayout import MDBoxLayout
+from kivymd.uix.label import MDLabel
+from kivymd.uix.fitimage import FitImage
+from kivymd.uix.card import MDCard
 
-# Constantes de optimización
-BATCH_SIZE = 10  # Productos a cargar por frame
-BATCH_DELAY = 0.016  # ~60fps entre batches
+
+class ProductoItem(RecycleDataViewBehavior, MDCard):
+    """Item de producto para RecycleView con diseño de tarjeta."""
+    index = NumericProperty(0)
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.orientation = "horizontal"
+        self.size_hint_y = None
+        self.height = dp(88)
+        self.padding = dp(8)
+        self.spacing = dp(12)
+        self.radius = [dp(8)]
+        self.elevation = 0
+        self.md_bg_color = (1, 1, 1, 1)
+        self.ripple_behavior = True
+
+        # Imagen del producto
+        self.imagen = FitImage(
+            source="",
+            size_hint=(None, None),
+            size=(dp(64), dp(64)),
+            radius=[dp(8)],
+        )
+        self.add_widget(self.imagen)
+
+        # Contenedor de texto
+        text_box = MDBoxLayout(
+            orientation="vertical",
+            spacing=dp(2),
+            padding=(0, dp(4), 0, dp(4)),
+        )
+
+        self.nombre_label = MDLabel(
+            text="",
+            font_style="Title",
+            role="medium",
+            adaptive_height=True,
+            shorten=True,
+            shorten_from="right",
+        )
+        self.info_label = MDLabel(
+            text="",
+            font_style="Body",
+            role="small",
+            theme_text_color="Secondary",
+            adaptive_height=True,
+        )
+        self.stock_label = MDLabel(
+            text="",
+            font_style="Label",
+            role="medium",
+            theme_text_color="Primary",
+            adaptive_height=True,
+        )
+
+        text_box.add_widget(self.nombre_label)
+        text_box.add_widget(self.info_label)
+        text_box.add_widget(self.stock_label)
+        self.add_widget(text_box)
+
+    def refresh_view_attrs(self, rv, index, data):
+        """Actualiza el item con nuevos datos."""
+        self.index = index
+
+        # Nombre
+        self.nombre_label.text = data.get('nombre', 'Sin nombre')[:45]
+
+        # Info
+        categoria = data.get('categoria', 'General')
+        codigo = data.get('codigo_barras', '')
+        self.info_label.text = f"{categoria} | {codigo}"
+
+        # Stock
+        cantidad = data.get('cantidad', 0)
+        precio = data.get('precio', 0)
+        if precio > 0:
+            self.stock_label.text = f"Stock: {cantidad} | ${precio:.2f}"
+        else:
+            self.stock_label.text = f"Stock: {cantidad}"
+
+        # Imagen
+        imagen_url = data.get('imagen_url', '')
+        if imagen_url:
+            self.imagen.source = imagen_url
+        else:
+            self.imagen.source = "assets/placeholder.png"
+
+        return super().refresh_view_attrs(rv, index, data)
+
+    def on_touch_down(self, touch):
+        """Maneja click en el item."""
+        if self.collide_point(*touch.pos):
+            # Navegar hacia arriba para encontrar el screen
+            parent = self.parent
+            while parent:
+                if hasattr(parent, '_on_producto_click'):
+                    if hasattr(parent, 'parent') and hasattr(parent.parent, 'data'):
+                        rv = parent.parent
+                        if self.index < len(rv.data):
+                            parent._on_producto_click(rv.data[self.index])
+                    break
+                if isinstance(parent, InventoryScreen):
+                    rv_widget = parent.ids.get('product_rv')
+                    if rv_widget and self.index < len(rv_widget.data):
+                        parent._on_producto_click(rv_widget.data[self.index])
+                    break
+                parent = parent.parent
+            return True
+        return super().on_touch_down(touch)
 
 
 class InventoryScreen(MDScreen):
     """
-    Pantalla de inventario que muestra productos.
-    Usa cache local para funcionar offline.
+    Pantalla de inventario con RecycleView.
+    Renderiza solo items visibles para máximo rendimiento.
     """
 
     productos = ListProperty([])
@@ -28,8 +141,6 @@ class InventoryScreen(MDScreen):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.repository = None
-        self._batch_event = None  # Para cancelar carga en progreso
-        self._productos_pendientes = []  # Cola de productos por renderizar
 
     def on_enter(self, *args):
         """Carga productos cuando entra a la pantalla."""
@@ -39,22 +150,14 @@ class InventoryScreen(MDScreen):
     def on_leave(self, *args):
         """Callback cuando sale de la pantalla."""
         print(f"✓ Saliendo de InventoryScreen: {self.name}")
-        # Cancelar carga de batches pendientes
-        if self._batch_event:
-            self._batch_event.cancel()
-            self._batch_event = None
 
     def cargar_productos(self):
         """Carga productos desde cache local y/o Firebase."""
-        # Evitar múltiples cargas simultáneas
         if self.is_loading:
             return
 
         self.is_loading = True
         self.error_message = ""
-
-        # Actualizar UI de carga
-        self._mostrar_cargando()
 
         # Inicializar Repository si no existe
         if self.repository is None:
@@ -67,20 +170,14 @@ class InventoryScreen(MDScreen):
         productos_cache = self.repository.get_todos()
 
         if productos_cache:
-            # Mostrar datos del cache inmediatamente
             self._on_productos_cargados(productos_cache)
-
-            # Si hay conexión, sincronizar en background
             if self.repository.is_online:
                 self._sync_desde_firebase()
         elif self.repository.is_online:
-            # Cache vacío, intentar cargar desde Firebase
             self._sync_desde_firebase()
         else:
-            # Sin cache y sin conexión
             self.is_loading = False
             self.error_message = "Sin conexión y sin datos en cache"
-            self._mostrar_error()
 
     def _sync_desde_firebase(self):
         """Sincroniza productos desde Firebase en background."""
@@ -98,120 +195,35 @@ class InventoryScreen(MDScreen):
         self.productos = productos or []
         modo = "offline" if self.is_offline else "online"
         print(f"✓ Cargados {len(self.productos)} productos ({modo})")
-
-        # Actualizar lista en el hilo principal
-        Clock.schedule_once(lambda dt: self._actualizar_lista())
+        Clock.schedule_once(lambda dt: self._actualizar_recycleview())
 
     def _on_firebase_sync(self, productos):
         """Callback cuando llegan datos de Firebase."""
         if productos:
-            # Guardar en cache local para uso offline
             self.repository.cache.sincronizar_desde_firebase(productos)
             self.is_offline = False
             print(f"✓ Sincronizados {len(productos)} productos desde Firebase")
-            # Solo actualizar UI si hay cambios significativos
             if len(productos) != len(self.productos):
                 self.productos = productos
-                Clock.schedule_once(lambda dt: self._actualizar_lista())
+                Clock.schedule_once(lambda dt: self._actualizar_recycleview())
         self.is_loading = False
 
     def _on_error_carga(self, error):
         """Callback cuando hay error de carga."""
         self.is_loading = False
-        # Si ya hay productos en cache, solo mostrar warning
         if self.productos:
             print(f"⚠ Error sync Firebase (usando cache): {error}")
             self.is_offline = True
         else:
             self.error_message = str(error)
             print(f"✗ Error cargando productos: {error}")
-            Clock.schedule_once(lambda dt: self._mostrar_error())
 
-    def _mostrar_cargando(self):
-        """Muestra indicador de carga."""
-        lista = self.ids.get('product_list')
-        if lista:
-            lista.clear_widgets()
-            # El spinner se muestra automáticamente vía binding en KV
-
-    def _mostrar_error(self):
-        """Muestra mensaje de error."""
-        lista = self.ids.get('product_list')
-        if lista:
-            lista.clear_widgets()
-
-    def _actualizar_lista(self):
-        """Actualiza la lista de productos en la UI usando carga por batches."""
-        lista = self.ids.get('product_list')
-        if not lista:
-            print("✗ No se encontró product_list")
-            return
-
-        # Cancelar carga anterior si existe
-        if self._batch_event:
-            self._batch_event.cancel()
-
-        lista.clear_widgets()
-
-        if not self.productos:
-            return
-
-        # Preparar cola de productos para carga progresiva
-        self._productos_pendientes = list(self.productos)
-        self._cargar_batch()
-
-    def _cargar_batch(self, dt=None):
-        """Carga un batch de productos en la UI."""
-        lista = self.ids.get('product_list')
-        if not lista or not self._productos_pendientes:
-            self._batch_event = None
-            return
-
-        # Procesar batch actual
-        batch = self._productos_pendientes[:BATCH_SIZE]
-        self._productos_pendientes = self._productos_pendientes[BATCH_SIZE:]
-
-        for producto in batch:
-            item = self._crear_item_producto(producto)
-            lista.add_widget(item)
-
-        # Programar siguiente batch si quedan productos
-        if self._productos_pendientes:
-            self._batch_event = Clock.schedule_once(self._cargar_batch, BATCH_DELAY)
-        else:
-            self._batch_event = None
-
-    def _crear_item_producto(self, producto):
-        """Crea un item de lista para un producto."""
-        nombre = producto.get('nombre', 'Sin nombre')
-        categoria = producto.get('categoria', 'General')
-        cantidad = producto.get('cantidad', 0)
-        codigo = producto.get('codigo_barras', '')
-        precio = producto.get('precio', 0)
-
-        # Crear item de lista
-        item = MDListItem(
-            on_release=lambda x, p=producto: self._on_producto_click(p)
-        )
-
-        # Icono del producto (evita errores de imagen no encontrada)
-        icon = MDListItemLeadingIcon(icon="package-variant")
-        item.add_widget(icon)
-
-        # Nombre del producto
-        item.add_widget(MDListItemHeadlineText(text=nombre[:40]))
-
-        # Categoría y código
-        item.add_widget(MDListItemSupportingText(text=f"{categoria} | {codigo}"))
-
-        # Cantidad y precio
-        if precio > 0:
-            terciario = f"Stock: {cantidad} | ${precio:.2f}"
-        else:
-            terciario = f"Stock: {cantidad}"
-        item.add_widget(MDListItemTertiaryText(text=terciario))
-
-        return item
+    def _actualizar_recycleview(self):
+        """Actualiza el RecycleView con los productos."""
+        rv = self.ids.get('product_rv')
+        if rv:
+            rv.data = self.productos
+            print(f"✓ RecycleView actualizado: {len(self.productos)} items")
 
     def _on_producto_click(self, producto):
         """Maneja click en un producto."""
