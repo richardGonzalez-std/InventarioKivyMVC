@@ -28,11 +28,18 @@ class InventoryModel:
         Esta es la lógica de 'handleUpdateQuantity' del código original.
         Aplica todas las reglas de negocio antes de llamar a la BD.
         """
-        
+
+        # SIAM-CP3-CU01: Validación de cantidad negativa
+        if change_amount < 0:
+            raise ValueError("Error: No se permiten cantidades negativas.")
+
+        if change_amount == 0:
+            raise ValueError("Error: La cantidad debe ser mayor a cero.")
+
         # 1. Obtener el estado actual
         item = self.db.get_item(collection, item_id)
         current_quantity = 0
-        
+
         if item:
             current_quantity = item.get('quantity', 0)
         elif action_type == 'salida':

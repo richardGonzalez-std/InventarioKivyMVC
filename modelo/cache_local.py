@@ -67,16 +67,26 @@ class CacheLocal:
                     ubicacion TEXT,
                     precio_unitario REAL,
                     imagen_url TEXT,
+                    fecha_vencimiento TEXT,
+                    stock_minimo INTEGER DEFAULT 0,
+                    stock_maximo INTEGER DEFAULT 0,
                     fecha_sync TEXT,
                     datos_extra TEXT
                 )
             ''')
 
-            # Migración: agregar columna imagen_url si no existe
-            try:
-                cursor.execute('ALTER TABLE productos ADD COLUMN imagen_url TEXT')
-            except sqlite3.OperationalError:
-                pass  # Columna ya existe
+            # Migraciones: agregar columnas si no existen
+            migraciones = [
+                'ALTER TABLE productos ADD COLUMN imagen_url TEXT',
+                'ALTER TABLE productos ADD COLUMN fecha_vencimiento TEXT',
+                'ALTER TABLE productos ADD COLUMN stock_minimo INTEGER DEFAULT 0',
+                'ALTER TABLE productos ADD COLUMN stock_maximo INTEGER DEFAULT 0',
+            ]
+            for sql in migraciones:
+                try:
+                    cursor.execute(sql)
+                except sqlite3.OperationalError:
+                    pass  # Columna ya existe
 
             # Tabla de cola de sincronización (operaciones pendientes)
             cursor.execute('''
@@ -130,11 +140,23 @@ class CacheLocal:
             print(f"✗ Error buscando en cache: {e}")
             return None
 
-    def get_todos_productos(self) -> List[Dict[str, Any]]:
-        """Obtiene todos los productos del cache."""
+    def get_todos_productos(self, orden: str = "stock") -> List[Dict[str, Any]]:
+        """
+        Obtiene todos los productos del cache.
+
+        Args:
+            orden: "stock" (cantidad desc), "nombre" (alfabético), "fecha" (recientes)
+        """
         try:
             cursor = self.conn.cursor()
-            cursor.execute('SELECT * FROM productos ORDER BY nombre')
+
+            if orden == "stock":
+                cursor.execute('SELECT * FROM productos ORDER BY cantidad DESC, nombre')
+            elif orden == "fecha":
+                cursor.execute('SELECT * FROM productos ORDER BY fecha_sync DESC')
+            else:  # nombre
+                cursor.execute('SELECT * FROM productos ORDER BY nombre')
+
             rows = cursor.fetchall()
             return [self._row_to_dict(row) for row in rows]
 
@@ -189,13 +211,16 @@ class CacheLocal:
 
             # Extraer datos extra que no tienen columna
             datos_conocidos = ['codigo_barras', 'nombre', 'categoria',
-                             'cantidad', 'unidad', 'ubicacion', 'precio_unitario', 'imagen_url']
+                             'cantidad', 'unidad', 'ubicacion', 'precio_unitario',
+                             'imagen_url', 'fecha_vencimiento', 'stock_minimo', 'stock_maximo']
             datos_extra = {k: v for k, v in producto.items() if k not in datos_conocidos}
 
             cursor.execute('''
                 INSERT OR REPLACE INTO productos
-                (codigo_barras, nombre, categoria, cantidad, unidad, ubicacion, precio_unitario, imagen_url, fecha_sync, datos_extra)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (codigo_barras, nombre, categoria, cantidad, unidad, ubicacion,
+                 precio_unitario, imagen_url, fecha_vencimiento, stock_minimo, stock_maximo,
+                 fecha_sync, datos_extra)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (
                 producto.get('codigo_barras'),
                 producto.get('nombre', ''),
@@ -205,6 +230,9 @@ class CacheLocal:
                 producto.get('ubicacion', ''),
                 producto.get('precio_unitario'),
                 producto.get('imagen_url', ''),
+                producto.get('fecha_vencimiento', ''),
+                producto.get('stock_minimo', 0),
+                producto.get('stock_maximo', 0),
                 datetime.now().isoformat(),
                 json.dumps(datos_extra) if datos_extra else None
             ))
@@ -369,6 +397,66 @@ class CacheLocal:
         except Exception as e:
             print(f"✗ Error obteniendo stats: {e}")
             return {}
+
+    def get_productos_stock_bajo(self, umbral_porcentaje: float = 0.15) -> List[Dict[str, Any]]:
+        """
+        Obtiene productos con stock bajo (SIAM-RF-02).
+
+        Un producto tiene stock bajo si:
+        - stock_maximo > 0 y cantidad <= stock_maximo * umbral_porcentaje
+        - O si cantidad <= stock_minimo
+
+        Args:
+            umbral_porcentaje: Porcentaje del stock máximo (default 15%)
+
+        Returns:
+            Lista de productos con stock bajo
+        """
+        try:
+            cursor = self.conn.cursor()
+            # Productos donde cantidad está por debajo del 15% del máximo
+            # o por debajo del mínimo configurado
+            cursor.execute('''
+                SELECT * FROM productos
+                WHERE (stock_maximo > 0 AND cantidad <= stock_maximo * ?)
+                   OR (stock_minimo > 0 AND cantidad <= stock_minimo)
+                ORDER BY cantidad ASC
+            ''', (umbral_porcentaje,))
+            rows = cursor.fetchall()
+            return [self._row_to_dict(row) for row in rows]
+
+        except Exception as e:
+            print(f"✗ Error obteniendo productos con stock bajo: {e}")
+            return []
+
+    def get_productos_por_vencer(self, dias: int = 30) -> List[Dict[str, Any]]:
+        """
+        Obtiene productos próximos a vencer (SIAM-RF-05).
+
+        Args:
+            dias: Número de días para considerar como "próximo a vencer"
+
+        Returns:
+            Lista de productos que vencen en los próximos X días
+        """
+        try:
+            from datetime import timedelta
+            fecha_limite = (datetime.now() + timedelta(days=dias)).isoformat()[:10]
+
+            cursor = self.conn.cursor()
+            cursor.execute('''
+                SELECT * FROM productos
+                WHERE fecha_vencimiento != ''
+                  AND fecha_vencimiento IS NOT NULL
+                  AND fecha_vencimiento <= ?
+                ORDER BY fecha_vencimiento ASC
+            ''', (fecha_limite,))
+            rows = cursor.fetchall()
+            return [self._row_to_dict(row) for row in rows]
+
+        except Exception as e:
+            print(f"✗ Error obteniendo productos por vencer: {e}")
+            return []
 
     def close(self):
         """Cierra conexión a la BD."""

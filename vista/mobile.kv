@@ -203,11 +203,17 @@
             type: "small"
             MDTopAppBarLeadingButtonContainer:
                 MDActionTopAppBarButton:
-                    icon: "menu"
+                    icon: "account-circle"
+                    on_release: root._mostrar_menu_usuario()
 
             MDTopAppBarTitle:
                 text: "Escanear Código"
                 halign: "center"
+
+            MDTopAppBarTrailingButtonContainer:
+                MDActionTopAppBarButton:
+                    icon: "logout"
+                    on_release: app.logout()
 
         # Contenedor de cámara
         MDBoxLayout:
@@ -270,6 +276,10 @@
                 halign: "center"
 
             MDTopAppBarTrailingButtonContainer:
+                MDActionTopAppBarButton:
+                    icon: "file-chart-outline"
+                    on_release: root.generar_reporte()
+
                 MDActionTopAppBarButton:
                     icon: "refresh"
                     on_release: root.refrescar()

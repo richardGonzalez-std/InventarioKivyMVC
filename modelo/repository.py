@@ -4,7 +4,6 @@ Repository Pattern para SIAM.
 Orquesta las operaciones entre Firebase (remoto) y SQLite (cache local).
 """
 
-import asyncio
 from typing import Optional, List, Dict, Any, Callable
 from kivy.clock import Clock
 
@@ -194,6 +193,19 @@ class ProductoRepository:
     ) -> bool:
         """Lógica común para entrada/salida."""
 
+        # SIAM-CP3-CU01: Validación de cantidad negativa
+        if cantidad < 0:
+            print(f"✗ Cantidad negativa no permitida: {cantidad}")
+            if callback:
+                callback(False, "Error: No se permiten cantidades negativas")
+            return False
+
+        if cantidad == 0:
+            print(f"✗ Cantidad debe ser mayor a cero")
+            if callback:
+                callback(False, "La cantidad debe ser mayor a cero")
+            return False
+
         # 1. Obtener producto actual
         producto = self.buscar_por_codigo(codigo_barras)
         if not producto:
@@ -214,18 +226,26 @@ class ProductoRepository:
                 return False
             nueva_cantidad = cantidad_actual - cantidad
 
+        # Validar que el resultado no sea negativo (doble verificación)
+        if nueva_cantidad < 0:
+            print(f"✗ Operación resultaría en stock negativo: {nueva_cantidad}")
+            if callback:
+                callback(False, "Error: La operación resultaría en stock negativo")
+            return False
+
         # 3. Actualizar en cache (inmediato)
         self.cache.actualizar_cantidad(codigo_barras, nueva_cantidad)
 
         # 4. Sincronizar con Firebase
         if self.is_online and self.firebase:
             try:
-                # Ejecutar async en background
-                asyncio.create_task(self._sync_movimiento(
-                    codigo_barras, tipo, cantidad, nueva_cantidad, usuario, notas
-                ))
-            except RuntimeError:
-                # Si no hay event loop, agregar a cola
+                # Ejecutar sync en thread de Kivy
+                self.firebase.actualizar_cantidad_sync(codigo_barras, nueva_cantidad)
+                self.firebase.registrar_movimiento_sync(
+                    codigo_barras, tipo, cantidad, usuario, notas
+                )
+            except Exception as e:
+                print(f"⚠ Error sincronizando movimiento: {e}")
                 self._agregar_a_cola(codigo_barras, tipo, cantidad, usuario, notas)
         else:
             # Offline: agregar a cola
@@ -235,28 +255,6 @@ class ProductoRepository:
         if callback:
             callback(True, f"{tipo.capitalize()} registrada. Nuevo stock: {nueva_cantidad}")
         return True
-
-    async def _sync_movimiento(
-        self,
-        codigo_barras: str,
-        tipo: str,
-        cantidad: int,
-        nueva_cantidad: int,
-        usuario: str,
-        notas: str
-    ):
-        """Sincroniza movimiento con Firebase."""
-        try:
-            # Actualizar cantidad
-            await self.firebase.actualizar_cantidad(codigo_barras, nueva_cantidad)
-
-            # Registrar movimiento
-            await self.firebase.registrar_movimiento(
-                codigo_barras, tipo, cantidad, usuario, notas
-            )
-        except Exception as e:
-            print(f"✗ Error sincronizando movimiento: {e}")
-            self._agregar_a_cola(codigo_barras, tipo, cantidad, usuario, notas)
 
     def _agregar_a_cola(self, codigo_barras: str, tipo: str, cantidad: int, usuario: str, notas: str):
         """Agrega movimiento a cola para sincronizar después."""
@@ -337,3 +335,22 @@ class ProductoRepository:
         stats['is_online'] = self.is_online
         stats['firebase_disponible'] = FIREBASE_AVAILABLE
         return stats
+
+    # ─────────────────────────────────────────────────────────
+    # ALERTAS (SIAM-RF-02, SIAM-RF-05)
+    # ─────────────────────────────────────────────────────────
+
+    def get_alertas_stock_bajo(self, umbral: float = 0.15) -> List[Dict[str, Any]]:
+        """Obtiene productos con stock bajo (SIAM-RF-02)."""
+        return self.cache.get_productos_stock_bajo(umbral)
+
+    def get_alertas_por_vencer(self, dias: int = 30) -> List[Dict[str, Any]]:
+        """Obtiene productos próximos a vencer (SIAM-RF-05)."""
+        return self.cache.get_productos_por_vencer(dias)
+
+    def get_todas_alertas(self) -> Dict[str, List[Dict[str, Any]]]:
+        """Obtiene todas las alertas activas."""
+        return {
+            'stock_bajo': self.get_alertas_stock_bajo(),
+            'por_vencer': self.get_alertas_por_vencer()
+        }

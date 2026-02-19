@@ -535,14 +535,25 @@ class CameraScreen(MDScreen):
         self.dialog.open()
 
     def _mostrar_dialog_nuevo(self, codigo):
-        """Muestra diálogo para crear nuevo producto con campo de nombre."""
+        """Muestra diálogo para crear nuevo producto con campos requeridos."""
         if self.dialog:
             self.dialog.dismiss()
 
-        # Campo para nombre del producto
+        # Campos del formulario
         self.nombre_producto_field = MDTextField(
-            MDTextFieldHintText(text="Nombre del producto"),
+            MDTextFieldHintText(text="Nombre del producto *"),
             mode="outlined",
+        )
+
+        self.ubicacion_field = MDTextField(
+            MDTextFieldHintText(text="Ubicación física *"),
+            mode="outlined",
+        )
+
+        self.cantidad_inicial_field = MDTextField(
+            MDTextFieldHintText(text="Cantidad inicial"),
+            mode="outlined",
+            input_filter="int",
         )
 
         self._codigo_nuevo = codigo  # Guardar código para usar al registrar
@@ -555,6 +566,8 @@ class CameraScreen(MDScreen):
             MDDialogContentContainer(
                 MDBoxLayout(
                     self.nombre_producto_field,
+                    self.ubicacion_field,
+                    self.cantidad_inicial_field,
                     orientation="vertical",
                     spacing="12dp",
                     padding="12dp",
@@ -625,9 +638,16 @@ class CameraScreen(MDScreen):
 
         try:
             cantidad = int(self.cantidad_field.text or 0)
-            if cantidad <= 0:
-                self._mostrar_snackbar("Ingrese cantidad válida")
+
+            # SIAM-CP3-CU01: Validación de cantidad negativa
+            if cantidad < 0:
+                self._mostrar_snackbar("⚠ Error: No se permiten cantidades negativas")
                 return
+
+            if cantidad == 0:
+                self._mostrar_snackbar("Ingrese una cantidad mayor a cero")
+                return
+
         except ValueError:
             self._mostrar_snackbar("Cantidad inválida")
             return
@@ -638,18 +658,23 @@ class CameraScreen(MDScreen):
             self.dialog.dismiss()
 
         if self.repository:
+            # Obtener usuario autenticado
+            from kivy.app import App
+            app = App.get_running_app()
+            usuario = getattr(app, 'current_user', None) or "usuario_app"
+
             if tipo == "entrada":
                 self.repository.registrar_entrada(
                     codigo_barras=codigo,
                     cantidad=cantidad,
-                    usuario="usuario_app",  # TODO: obtener usuario real
+                    usuario=usuario,
                     callback=lambda ok, msg: self._movimiento_completado(ok, tipo, cantidad, msg)
                 )
             else:
                 self.repository.registrar_salida(
                     codigo_barras=codigo,
                     cantidad=cantidad,
-                    usuario="usuario_app",
+                    usuario=usuario,
                     callback=lambda ok, msg: self._movimiento_completado(ok, tipo, cantidad, msg)
                 )
         else:
@@ -669,22 +694,41 @@ class CameraScreen(MDScreen):
             return
 
         nombre = self.nombre_producto_field.text.strip()
+        ubicacion = self.ubicacion_field.text.strip() if hasattr(self, 'ubicacion_field') else ""
+        cantidad_text = self.cantidad_inicial_field.text.strip() if hasattr(self, 'cantidad_inicial_field') else "0"
         codigo = self._codigo_nuevo
 
+        # Validaciones SIAM-RF-03: Ubicación física requerida
         if not nombre:
             self._mostrar_snackbar("Ingrese el nombre del producto")
             return
 
+        if not ubicacion:
+            self._mostrar_snackbar("Ingrese la ubicación física")
+            return
+
+        # Parsear cantidad inicial
+        try:
+            cantidad = int(cantidad_text) if cantidad_text else 0
+            if cantidad < 0:
+                self._mostrar_snackbar("La cantidad no puede ser negativa")
+                return
+        except ValueError:
+            cantidad = 0
+
         if self.dialog:
             self.dialog.dismiss()
 
-        # Crear producto con datos mínimos
+        # Crear producto con campos requeridos
         producto = {
             'codigo_barras': codigo,
             'nombre': nombre,
-            'cantidad': 0,
+            'cantidad': cantidad,
+            'ubicacion': ubicacion,
             'categoria': 'General',
             'precio': 0,
+            'stock_minimo': 0,
+            'stock_maximo': 0,
         }
 
         # Guardar usando el repositorio
@@ -713,6 +757,13 @@ class CameraScreen(MDScreen):
             pos_hint={"center_x": 0.5},
             size_hint_x=0.9,
         ).open()
+
+    def _mostrar_menu_usuario(self):
+        """Muestra información del usuario actual."""
+        from kivy.app import App
+        app = App.get_running_app()
+        usuario = getattr(app, 'current_user', None) or "Sin sesión"
+        self._mostrar_snackbar(f"Usuario: {usuario}")
 
     def capture_photo(self, *args):
         if not self.camera_widget or not self.camera_widget.texture: return

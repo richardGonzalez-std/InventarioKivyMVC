@@ -5,15 +5,14 @@ Diseño con imagen de producto estilo MDListItem.
 """
 from kivy.properties import ListProperty, BooleanProperty, StringProperty, NumericProperty
 from kivy.clock import Clock
-from kivy.uix.recycleview import RecycleView
 from kivy.uix.recycleview.views import RecycleDataViewBehavior
-from kivy.uix.recycleboxlayout import RecycleBoxLayout
 from kivy.metrics import dp
 from kivymd.uix.screen import MDScreen
 from kivymd.uix.boxlayout import MDBoxLayout
 from kivymd.uix.label import MDLabel
 from kivymd.uix.fitimage import FitImage
 from kivymd.uix.card import MDCard
+from kivymd.uix.snackbar import MDSnackbar, MDSnackbarText
 
 
 class ProductoItem(RecycleDataViewBehavior, MDCard):
@@ -88,13 +87,30 @@ class ProductoItem(RecycleDataViewBehavior, MDCard):
         codigo = data.get('codigo_barras', '')
         self.info_label.text = f"{categoria} | {codigo}"
 
-        # Stock
+        # Stock con alerta visual (SIAM-RF-02)
         cantidad = data.get('cantidad', 0)
+        stock_maximo = data.get('stock_maximo', 0)
+        stock_minimo = data.get('stock_minimo', 0)
         precio = data.get('precio', 0)
+
+        # Determinar si stock está bajo
+        stock_bajo = False
+        if stock_maximo > 0 and cantidad <= stock_maximo * 0.15:
+            stock_bajo = True
+        elif stock_minimo > 0 and cantidad <= stock_minimo:
+            stock_bajo = True
+
         if precio > 0:
             self.stock_label.text = f"Stock: {cantidad} | ${precio:.2f}"
         else:
             self.stock_label.text = f"Stock: {cantidad}"
+
+        if stock_bajo:
+            self.stock_label.text += "  BAJO"
+            self.stock_label.theme_text_color = "Custom"
+            self.stock_label.text_color = (0.89, 0.11, 0.14, 1)  # Rojo CORPOELEC
+        else:
+            self.stock_label.theme_text_color = "Primary"
 
         # Imagen
         imagen_url = data.get('imagen_url', '')
@@ -192,10 +208,14 @@ class InventoryScreen(MDScreen):
     def _on_productos_cargados(self, productos):
         """Callback cuando se cargan los productos."""
         self.is_loading = False
+        # Productos ya vienen ordenados por stock desde cache_local
         self.productos = productos or []
         modo = "offline" if self.is_offline else "online"
         print(f"✓ Cargados {len(self.productos)} productos ({modo})")
         Clock.schedule_once(lambda dt: self._actualizar_recycleview())
+
+        # SIAM-RF-02: Verificar alertas de stock bajo
+        Clock.schedule_once(lambda dt: self._verificar_alertas(), 0.5)
 
     def _on_firebase_sync(self, productos):
         """Callback cuando llegan datos de Firebase."""
@@ -203,9 +223,15 @@ class InventoryScreen(MDScreen):
             self.repository.cache.sincronizar_desde_firebase(productos)
             self.is_offline = False
             print(f"✓ Sincronizados {len(productos)} productos desde Firebase")
-            if len(productos) != len(self.productos):
-                self.productos = productos
-                Clock.schedule_once(lambda dt: self._actualizar_recycleview())
+            # Siempre actualizar UI con datos frescos de Firebase
+            # Ordenar por stock descendente
+            productos_ordenados = sorted(
+                productos,
+                key=lambda p: p.get('cantidad', 0),
+                reverse=True
+            )
+            self.productos = productos_ordenados
+            Clock.schedule_once(lambda dt: self._actualizar_recycleview())
         self.is_loading = False
 
     def _on_error_carga(self, error):
@@ -229,6 +255,72 @@ class InventoryScreen(MDScreen):
         """Maneja click en un producto."""
         print(f"✓ Producto seleccionado: {producto.get('nombre')}")
         # TODO: Mostrar detalle o diálogo de edición
+
+    def _verificar_alertas(self):
+        """Verifica alertas de stock bajo y vencimiento (SIAM-RF-02)."""
+        if not self.repository:
+            return
+
+        alertas = self.repository.get_todas_alertas()
+        stock_bajo = alertas.get('stock_bajo', [])
+        por_vencer = alertas.get('por_vencer', [])
+
+        total = len(stock_bajo) + len(por_vencer)
+        if total > 0:
+            partes = []
+            if stock_bajo:
+                partes.append(f"{len(stock_bajo)} con stock bajo")
+            if por_vencer:
+                partes.append(f"{len(por_vencer)} por vencer")
+            mensaje = "Alertas: " + ", ".join(partes)
+            MDSnackbar(
+                MDSnackbarText(text=mensaje),
+                y="24dp",
+                pos_hint={"center_x": 0.5},
+                size_hint_x=0.9,
+            ).open()
+            print(f"⚠ {mensaje}")
+
+    def generar_reporte(self):
+        """Genera reporte PDF del inventario (SIAM-RF-04)."""
+        try:
+            from modelo.reportes import generar_reporte_inventario, REPORTLAB_AVAILABLE
+        except ImportError:
+            MDSnackbar(
+                MDSnackbarText(text="Modulo de reportes no disponible"),
+                y="24dp", pos_hint={"center_x": 0.5}, size_hint_x=0.9,
+            ).open()
+            return
+
+        if not REPORTLAB_AVAILABLE:
+            MDSnackbar(
+                MDSnackbarText(text="reportlab no instalado"),
+                y="24dp", pos_hint={"center_x": 0.5}, size_hint_x=0.9,
+            ).open()
+            return
+
+        if not self.productos:
+            MDSnackbar(
+                MDSnackbarText(text="No hay productos para reportar"),
+                y="24dp", pos_hint={"center_x": 0.5}, size_hint_x=0.9,
+            ).open()
+            return
+
+        try:
+            from kivy.app import App
+            app = App.get_running_app()
+            usuario = getattr(app, 'current_user', None) or ""
+            ruta = generar_reporte_inventario(self.productos, usuario)
+            MDSnackbar(
+                MDSnackbarText(text=f"Reporte generado: {ruta}"),
+                y="24dp", pos_hint={"center_x": 0.5}, size_hint_x=0.9,
+            ).open()
+        except Exception as e:
+            print(f"✗ Error generando reporte: {e}")
+            MDSnackbar(
+                MDSnackbarText(text=f"Error: {e}"),
+                y="24dp", pos_hint={"center_x": 0.5}, size_hint_x=0.9,
+            ).open()
 
     def refrescar(self):
         """Refresca la lista de productos."""
