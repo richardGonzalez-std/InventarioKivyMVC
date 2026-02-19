@@ -25,10 +25,24 @@ class LoginScreen(MDScreen):
         self.name = "login"
 
     def on_enter(self, *args):
-        """Se ejecuta al entrar a la pantalla."""
+        """Se ejecuta al entrar a la pantalla. Verifica si hay sesión activa."""
         print("✓ Entrando a LoginScreen")
-        # Limpiar campos al entrar
-        Clock.schedule_once(self._clear_fields, 0.1)
+        # Verificar sesión guardada antes de mostrar el formulario
+        Clock.schedule_once(self._check_saved_session, 0.2)
+
+    def _check_saved_session(self, dt):
+        """Si hay sesión válida (< 8h), salta el login automáticamente."""
+        try:
+            from modelo.session_manager import load_session
+            saved_user = load_session()
+            if saved_user:
+                print(f"✓ Sesión restaurada: {saved_user}")
+                self._on_login_success(saved_user, save=False)
+                return
+        except Exception as e:
+            print(f"⚠ Error verificando sesión: {e}")
+        # Sin sesión válida - limpiar campos
+        self._clear_fields(None)
 
     def _clear_fields(self, dt):
         """Limpia los campos de texto."""
@@ -97,12 +111,20 @@ class LoginScreen(MDScreen):
         }
         return test_users.get(username) == password
 
-    def _on_login_success(self, username: str):
+    def _on_login_success(self, username: str, save: bool = True):
         """
         Maneja el login exitoso.
-        Navega a la pantalla principal.
+        Guarda sesión y navega a la pantalla principal.
         """
         print(f"✓ Login exitoso: {username}")
+
+        # Persistir sesión para no pedir login en las próximas 8 horas
+        if save:
+            try:
+                from modelo.session_manager import save_session
+                save_session(username)
+            except Exception as e:
+                print(f"⚠ No se pudo guardar sesión: {e}")
 
         # Guardar usuario en la app
         from kivy.app import App

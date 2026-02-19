@@ -13,6 +13,7 @@ from kivymd.uix.label import MDLabel
 from kivymd.uix.fitimage import FitImage
 from kivymd.uix.card import MDCard
 from kivymd.uix.snackbar import MDSnackbar, MDSnackbarText
+from kivy.utils import platform
 
 
 class ProductoItem(RecycleDataViewBehavior, MDCard):
@@ -153,6 +154,7 @@ class InventoryScreen(MDScreen):
     is_loading = BooleanProperty(False)
     error_message = StringProperty("")
     is_offline = BooleanProperty(False)
+    is_mobile = BooleanProperty(platform == "android")
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -283,6 +285,14 @@ class InventoryScreen(MDScreen):
 
     def generar_reporte(self):
         """Genera reporte PDF del inventario (SIAM-RF-04)."""
+        # Reportes no disponibles en Android (reportlab no compatible)
+        if platform == "android":
+            MDSnackbar(
+                MDSnackbarText(text="Reportes no disponibles en móvil"),
+                y="24dp", pos_hint={"center_x": 0.5}, size_hint_x=0.9,
+            ).open()
+            return
+
         try:
             from modelo.reportes import generar_reporte_inventario, REPORTLAB_AVAILABLE
         except ImportError:

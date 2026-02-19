@@ -192,10 +192,14 @@ class InventoryApp(MDApp):
     def logout(self):
         """
         Cierra la sesión del usuario actual.
-
-        Limpia el usuario y navega a la pantalla de login.
+        Elimina la sesión guardada y navega a login.
         """
         print(f"✓ Cerrando sesión de: {self.current_user}")
+        try:
+            from modelo.session_manager import clear_session
+            clear_session()
+        except Exception as e:
+            print(f"⚠ Error limpiando sesión: {e}")
         self.current_user = None
         self.root.current = "login"
 

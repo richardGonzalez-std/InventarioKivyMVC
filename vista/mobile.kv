@@ -207,7 +207,7 @@
                     on_release: root._mostrar_menu_usuario()
 
             MDTopAppBarTitle:
-                text: "Escanear Código"
+                text: "Escanear"
                 halign: "center"
 
             MDTopAppBarTrailingButtonContainer:
@@ -215,18 +215,59 @@
                     icon: "logout"
                     on_release: app.logout()
 
-        # Contenedor de cámara
-        MDBoxLayout:
+        # Contenedor de cámara con overlay de guía visual
+        MDRelativeLayout:
             id: camera_container
 
-        # Controles
+            # Marco guía de escaneo (esquinas tipo visor)
+            MDBoxLayout:
+                size_hint: None, None
+                size: "280dp", "160dp"
+                pos_hint: {"center_x": 0.5, "center_y": 0.55}
+                canvas.before:
+                    Color:
+                        rgba: 1, 1, 1, 0.85
+                    Line:
+                        rectangle: [self.x, self.y, self.width, self.height]
+                        width: 2.5
+
+            # Etiqueta de guía dentro del visor
+            MDLabel:
+                text: "Apunte el código dentro del marco"
+                size_hint: None, None
+                size: "300dp", "24dp"
+                pos_hint: {"center_x": 0.5, "y": 0.06}
+                halign: "center"
+                theme_text_color: "Custom"
+                text_color: 1, 1, 1, 0.85
+                font_style: "Label"
+                role: "small"
+
+        # Barra de recientes (últimos productos escaneados)
+        ScrollView:
+            size_hint_y: None
+            height: "48dp"
+            do_scroll_x: True
+            do_scroll_y: False
+            bar_width: 0
+
+            MDBoxLayout:
+                id: recent_bar
+                orientation: "horizontal"
+                size_hint_x: None
+                width: self.minimum_width
+                height: "48dp"
+                padding: "8dp", "6dp"
+                spacing: "6dp"
+
+        # Controles grandes (operación con una mano)
         MDBoxLayout:
             id: controls_container
             orientation: "horizontal"
             size_hint_y: None
-            height: "60dp"
-            padding: "10dp"
-            spacing: "10dp"
+            height: "96dp"
+            padding: "12dp"
+            spacing: "12dp"
 
         # Status
         MDLabel:
@@ -234,8 +275,10 @@
             text: "Apunte la cámara al código de barras"
             halign: "center"
             size_hint_y: None
-            height: "40dp"
+            height: "36dp"
             theme_text_color: "Secondary"
+            font_style: "Label"
+            role: "medium"
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -276,10 +319,6 @@
                 halign: "center"
 
             MDTopAppBarTrailingButtonContainer:
-                MDActionTopAppBarButton:
-                    icon: "file-chart-outline"
-                    on_release: root.generar_reporte()
-
                 MDActionTopAppBarButton:
                     icon: "refresh"
                     on_release: root.refrescar()

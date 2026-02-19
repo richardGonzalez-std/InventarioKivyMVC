@@ -94,6 +94,8 @@ class CameraScreen(MDScreen):
         self.current_producto = None
         self._camera_init_attempts = 0
         self._camera_ready = False
+        self._recent_scans = []   # Últimos 5 productos escaneados [(nombre, codigo), ...]
+        self._cantidad_mov = 1    # Cantidad para el movimiento actual
 
         # Inicializar repositorio
         if REPOSITORY_AVAILABLE:
@@ -106,8 +108,8 @@ class CameraScreen(MDScreen):
         """Inicia la cámara al entrar."""
         print("✓ Entrando a CameraScreen...")
         self._camera_init_attempts = 0
-        # Delay mayor para asegurar que el layout esté listo
         Clock.schedule_once(self._init_camera_safe, 0.3)
+        Clock.schedule_once(lambda dt: self._update_recent_bar(), 0.6)
 
     def _init_camera_safe(self, dt):
         """Intenta inicializar la cámara de forma segura con reintentos."""
@@ -227,38 +229,65 @@ class CameraScreen(MDScreen):
     # tal como los tenías en tu archivo original.
 
     def _create_controls(self):
-        """Crea los botones de control según plataforma."""
+        """Crea botones de control grandes (UX para operación con una mano)."""
         controls = self.ids.controls_container
         controls.clear_widgets()
 
         if platform == "android" and ANDROID_SCANNER:
-            # Android con ZXing Core embebido
-            self.scan_button = MDButton(style="elevated", size_hint_x=0.5, on_release=self.toggle_scanning_android)
-            self.scan_button.add_widget(MDButtonText(text="Escanear"))
+            # Botón de escaneo grande (60% ancho)
+            self.scan_button = MDButton(
+                style="elevated",
+                size_hint=(0.6, 1),
+                on_release=self.toggle_scanning_android
+            )
+            self.scan_button.add_widget(MDButtonText(text="ESCANEAR", bold=True))
             controls.add_widget(self.scan_button)
 
-            # Botón entrada manual
-            manual_button = MDButton(style="outlined", size_hint_x=0.5, on_release=self._entrada_manual)
+            # Botón manual (40% ancho)
+            manual_button = MDButton(
+                style="outlined",
+                size_hint=(0.4, 1),
+                on_release=self._entrada_manual
+            )
             manual_button.add_widget(MDButtonText(text="Manual"))
             controls.add_widget(manual_button)
+
         elif platform == "android":
-            # Android sin ZXing - solo entrada manual
-            manual_button = MDButton(style="elevated", size_hint_x=1, on_release=self._entrada_manual)
-            manual_button.add_widget(MDButtonText(text="Ingresar Código"))
+            # Android sin ZXing - botón manual a ancho completo
+            manual_button = MDButton(
+                style="elevated",
+                size_hint=(1, 1),
+                on_release=self._entrada_manual
+            )
+            manual_button.add_widget(MDButtonText(text="INGRESAR CÓDIGO", bold=True))
             controls.add_widget(manual_button)
+
         elif PYZBAR_AVAILABLE:
             # PC con pyzbar
-            self.scan_button = MDButton(style="elevated", size_hint_x=0.5, on_release=self.toggle_scanning)
-            self.scan_button.add_widget(MDButtonText(text="Iniciar Escaneo"))
+            self.scan_button = MDButton(
+                style="elevated",
+                size_hint=(0.6, 1),
+                on_release=self.toggle_scanning
+            )
+            self.scan_button.add_widget(MDButtonText(text="INICIAR ESCANEO", bold=True))
             controls.add_widget(self.scan_button)
 
-            capture_button = MDButton(style="filled", size_hint_x=0.5, on_release=self.capture_photo)
+            capture_button = MDButton(
+                style="filled",
+                size_hint=(0.4, 1),
+                on_release=self.capture_photo
+            )
             capture_button.add_widget(MDButtonText(text="Capturar"))
             controls.add_widget(capture_button)
+
         else:
             # PC sin pyzbar - solo entrada manual
-            manual_button = MDButton(style="elevated", size_hint_x=0.5, on_release=self._entrada_manual)
-            manual_button.add_widget(MDButtonText(text="Ingresar Código"))
+            manual_button = MDButton(
+                style="elevated",
+                size_hint=(1, 1),
+                on_release=self._entrada_manual
+            )
+            manual_button.add_widget(MDButtonText(text="INGRESAR CÓDIGO", bold=True))
             controls.add_widget(manual_button)
 
     def toggle_scanning_android(self, *args):
@@ -470,9 +499,10 @@ class CameraScreen(MDScreen):
         """Procesa código escaneado y busca en BD."""
         print(f"✓ CÓDIGO: {code_data} (tipo: {code_type})")
         self.stop_scanning()
+        self._vibrar()  # Feedback háptico inmediato
 
         if 'status_label' in self.ids:
-            self.ids.status_label.text = f"🔍 Buscando: {code_data}..."
+            self.ids.status_label.text = f"Buscando: {code_data}..."
 
         # Buscar en repositorio (cache + Firebase)
         if self.repository:
@@ -486,48 +516,104 @@ class CameraScreen(MDScreen):
     def _mostrar_resultado(self, producto, codigo):
         """Muestra resultado de búsqueda en diálogo."""
         if producto:
-            # Producto encontrado
+            nombre = producto.get('nombre', 'Producto')
+            # Agregar a recientes (máximo 5, sin duplicados)
+            entry = (nombre, codigo)
+            if entry in self._recent_scans:
+                self._recent_scans.remove(entry)
+            self._recent_scans.insert(0, entry)
+            self._recent_scans = self._recent_scans[:5]
+            self._update_recent_bar()
+
             if 'status_label' in self.ids:
-                self.ids.status_label.text = f"✓ {producto.get('nombre', 'Producto')}"
+                self.ids.status_label.text = f"✓ {nombre}"
             self._mostrar_dialog_producto(producto)
         else:
-            # Producto no encontrado
             if 'status_label' in self.ids:
-                self.ids.status_label.text = f"⚠ No encontrado: {codigo}"
+                self.ids.status_label.text = f"No encontrado: {codigo}"
             self._mostrar_dialog_nuevo(codigo)
 
     def _mostrar_dialog_producto(self, producto):
-        """Muestra diálogo con info del producto encontrado."""
+        """Diálogo simplificado con selector +/- directo (UX mejorado para almacén)."""
         if self.dialog:
             self.dialog.dismiss()
 
         nombre = producto.get('nombre', 'Sin nombre')
-        cantidad = producto.get('cantidad', 0)
+        cantidad_actual = producto.get('cantidad', 0)
         ubicacion = producto.get('ubicacion', 'No especificada')
-        codigo = producto.get('codigo_barras', '')
 
         self.current_producto = producto
+        self._cantidad_mov = 1
+
+        # Label grande para mostrar la cantidad del movimiento
+        self._mov_cantidad_label = MDLabel(
+            text="1",
+            halign="center",
+            theme_text_color="Primary",
+            font_style="Display",
+            role="small",
+            size_hint_x=0.35,
+        )
+
+        # Botones grandes - y +
+        btn_menos = MDButton(
+            style="outlined",
+            size_hint=(0.3, None),
+            height="68dp",
+            on_release=lambda x: self._cambiar_cantidad_mov(-1),
+        )
+        btn_menos.add_widget(MDButtonText(text="−", bold=True))
+
+        btn_mas = MDButton(
+            style="filled",
+            size_hint=(0.3, None),
+            height="68dp",
+            on_release=lambda x: self._cambiar_cantidad_mov(1),
+        )
+        btn_mas.add_widget(MDButtonText(text="+", bold=True))
+
+        row_cantidad = MDBoxLayout(
+            btn_menos,
+            self._mov_cantidad_label,
+            btn_mas,
+            orientation="horizontal",
+            size_hint_y=None,
+            height="76dp",
+            spacing="8dp",
+        )
+
+        info_label = MDLabel(
+            text=f"Stock: {cantidad_actual}   |   {ubicacion}",
+            halign="center",
+            theme_text_color="Secondary",
+            size_hint_y=None,
+            height="36dp",
+            font_style="Label",
+            role="large",
+        )
 
         self.dialog = MDDialog(
             MDDialogHeadlineText(text=nombre),
-            MDDialogSupportingText(
-                text=f"📦 Cantidad: {cantidad}\n📍 Ubicación: {ubicacion}\n🏷️ Código: {codigo}"
+            MDDialogContentContainer(
+                MDBoxLayout(
+                    info_label,
+                    row_cantidad,
+                    orientation="vertical",
+                    spacing="4dp",
+                    padding=["12dp", "0dp"],
+                    adaptive_height=True,
+                ),
             ),
             MDDialogButtonContainer(
                 MDButton(
-                    MDButtonText(text="Cerrar"),
-                    style="text",
-                    on_release=lambda x: self.dialog.dismiss()
-                ),
-                MDButton(
-                    MDButtonText(text="➖ Salida"),
+                    MDButtonText(text="SALIDA", bold=True),
                     style="outlined",
-                    on_release=lambda x: self._mostrar_dialog_cantidad("salida")
+                    on_release=lambda x: self._confirmar_movimiento("salida"),
                 ),
                 MDButton(
-                    MDButtonText(text="➕ Entrada"),
+                    MDButtonText(text="ENTRADA", bold=True),
                     style="filled",
-                    on_release=lambda x: self._mostrar_dialog_cantidad("entrada")
+                    on_release=lambda x: self._confirmar_movimiento("entrada"),
                 ),
                 spacing="8dp",
             ),
@@ -748,6 +834,92 @@ class CameraScreen(MDScreen):
         else:
             self._mostrar_snackbar(f"Error: {mensaje}")
             print(f"✗ Error creando producto: {mensaje}")
+
+    def _cambiar_cantidad_mov(self, delta):
+        """Cambia la cantidad del movimiento (+/-)."""
+        self._cantidad_mov = max(1, self._cantidad_mov + delta)
+        if hasattr(self, '_mov_cantidad_label'):
+            self._mov_cantidad_label.text = str(self._cantidad_mov)
+
+    def _confirmar_movimiento(self, tipo):
+        """Procesa entrada o salida directamente desde el diálogo simplificado."""
+        if not self.current_producto:
+            return
+
+        cantidad = self._cantidad_mov
+        codigo = self.current_producto.get('codigo_barras')
+
+        if self.dialog:
+            self.dialog.dismiss()
+
+        if self.repository:
+            from kivy.app import App
+            app = App.get_running_app()
+            usuario = getattr(app, 'current_user', None) or "usuario_app"
+
+            if tipo == "entrada":
+                self.repository.registrar_entrada(
+                    codigo_barras=codigo,
+                    cantidad=cantidad,
+                    usuario=usuario,
+                    callback=lambda ok, msg: self._movimiento_completado(ok, tipo, cantidad, msg)
+                )
+            else:
+                self.repository.registrar_salida(
+                    codigo_barras=codigo,
+                    cantidad=cantidad,
+                    usuario=usuario,
+                    callback=lambda ok, msg: self._movimiento_completado(ok, tipo, cantidad, msg)
+                )
+        else:
+            self._mostrar_snackbar("Repositorio no disponible")
+
+    def _vibrar(self, duracion_ms=80):
+        """Vibración háptica al escanear (solo Android)."""
+        if platform != "android":
+            return
+        try:
+            from jnius import autoclass
+            PythonActivity = autoclass('org.kivy.android.PythonActivity')
+            activity = PythonActivity.mActivity
+            vibrator = activity.getSystemService('vibrator')
+            if vibrator and vibrator.hasVibrator():
+                vibrator.vibrate(duracion_ms)
+        except Exception as e:
+            print(f"⚠ Vibración: {e}")
+
+    def _update_recent_bar(self):
+        """Actualiza la barra horizontal de recientes."""
+        if 'recent_bar' not in self.ids:
+            return
+
+        bar = self.ids.recent_bar
+        bar.clear_widgets()
+
+        if not self._recent_scans:
+            hint = MDLabel(
+                text="Recientes aparecerán aquí",
+                theme_text_color="Hint",
+                font_style="Label",
+                role="small",
+                size_hint_x=None,
+                width="220dp",
+                halign="center",
+            )
+            bar.add_widget(hint)
+            return
+
+        for nombre, codigo in self._recent_scans:
+            texto = nombre[:14] + "…" if len(nombre) > 14 else nombre
+            chip = MDButton(
+                style="tonal",
+                size_hint=(None, None),
+                height="36dp",
+                width="130dp",
+                on_release=lambda x, c=codigo: self.on_code_scanned(c, "RECIENTE"),
+            )
+            chip.add_widget(MDButtonText(text=texto, font_size="11sp"))
+            bar.add_widget(chip)
 
     def _mostrar_snackbar(self, mensaje):
         """Muestra mensaje snackbar."""
